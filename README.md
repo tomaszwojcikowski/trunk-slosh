@@ -23,9 +23,16 @@ Dev server: http://127.0.0.1:49217. Append `?demo` for an autopilot attract mode
 | `A` / `D` | Steer |
 | `Space` | Handbrake |
 | `R` / `N` | Restart / new track |
+| `P` | Pause (window blur also pauses) |
+| `,` | Settings (ink, SFX, motion, quality, touch/keyboard ramp, export replay) |
 | `H` | Toggle the ink shader (compare with the flat render) |
+| `I` | Toggle the isometric **tub 3D** panel (flow arrows + slosh mesh); click the panel to enlarge, `Esc` to close |
 | `` ` `` | Debug vectors (velocity, acceleration, liquid center of mass) |
 | Touch | Left pad steers, right pad is gas/brake, **Drift** is the handbrake |
+
+On the intro screen you can pick **Practice**, **Contract**, or **Time trial**, set **cargo** and **vehicle** presets, **difficulty**, and **Today’s seed** (UTC daily). Results show spill volume, off-road time, peak slosh, and hardest G; bests are stored in `localStorage`.
+
+**URL flags** (share read-only links): `?seed=12345`, `?daily=1`, `?mode=contract|practice|timetrial`, `?difficulty=easy|medium|hard`, `?cargo=water|thick|volatile`, `?vehicle=pickup|short`, `?worker=1` (experimental fluid worker; sync sim stays default for replay determinism).
 
 Each run is graded on how much cargo you deliver, from S down to D.
 
@@ -56,6 +63,8 @@ Everything uses SI units (meters, kilograms, seconds) at a 120 Hz fixed step.
 |---------|-------------|
 | `npm run dev` | Vite dev server |
 | `npm test` | Vitest unit tests (fluid conservation and spill, vehicle dynamics, track, particles, skill vs. spill) |
+| `npm run typecheck` | TypeScript only (`tsc --noEmit`) |
+| `npm run lint` | Biome check |
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Preview production build |
 
