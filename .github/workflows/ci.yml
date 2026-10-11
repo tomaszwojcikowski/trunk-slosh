@@ -23,9 +23,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+      - run: npm install
       - run: npm run typecheck
+      - run: npx biome check --write .
       - run: npm run lint
       - run: npm test
       - run: npm run build
@@ -44,8 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+      - run: npm install
       - run: npm run build
         env:
           VITE_BASE_PATH: /trunk-slosh/

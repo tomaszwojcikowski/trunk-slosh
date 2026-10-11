@@ -1,21 +1,32 @@
 {
-  "name": "trunk-slosh",
-  "private": true,
-  "version": "0.6.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write ."
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.1",
-    "vitest": "^2.1.8"
-  }
+	"name": "trunk-slosh",
+	"private": false,
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/tomaszwojcikowski/trunk-slosh.git"
+	},
+	"version": "0.6.0",
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.15",
+		"@types/matter-js": "^0.20.2",
+		"typescript": "~6.0.2",
+		"vite": "^8.3.0",
+		"vitest": "^5.0.3"
+	},
+	"dependencies": {
+		"matter-js": "^0.20.0"
+	}
 }
