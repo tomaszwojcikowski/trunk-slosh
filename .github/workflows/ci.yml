@@ -23,7 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
         env:
@@ -41,7 +44,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          cache: npm
+      - run: npm ci
       - run: npm run build
         env:
           VITE_BASE_PATH: /trunk-slosh/
