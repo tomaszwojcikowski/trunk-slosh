@@ -4,6 +4,8 @@ A top-down driving game with a comic-book, Borderlands-style look. You haul an o
 
 **Live demo (GitHub Pages):** https://tomaszwojcikowski.github.io/trunk-slosh/ (after CI deploy; see [.github/DEPLOY.md](.github/DEPLOY.md))
 
+**Roadmap:** planned development phases, deliverables, and acceptance criteria are in [ROADMAP.md](ROADMAP.md).
+
 ## Run locally
 
 ```bash
@@ -67,4 +69,4 @@ VITE_BASE_PATH=/trunk-slosh/ npm run build && npm run preview
 
 GitHub Actions runs `npm test` and `npm run build` on push and on pull requests. Merges to `main` deploy `dist/` to **GitHub Pages** (repository name `trunk-slosh`, base path `/trunk-slosh/`).
 
-Enable Pages once: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+Enable Pages once: **Settings → Pages → Build and deployment → GitHub Actions**.
