@@ -152,7 +152,6 @@ export class Game {
 	private readonly fluidWorker: FluidWorkerClient;
 	private readonly audio = new AudioBus();
 	private paused = false;
-	private camRoll = 0;
 	private punch = 0;
 	private lastSpillVol = 0;
 	constructor(
@@ -620,7 +619,6 @@ export class Game {
 		this.accum = 0;
 		this.shake = 0;
 		this.punch = 0;
-		this.camRoll = 0;
 		this.spillWindow = 0;
 		this.lastSpillVol = this.fluid.spilledVolume;
 		this.lastWheel = [null, null, null, null];
@@ -865,14 +863,8 @@ export class Game {
 			this.punch *= 0.05 ** frameDt;
 		}
 		this.camera.zoom += (zoom - this.camera.zoom) * (1 - 0.2 ** frameDt);
-		if (!this.settings.reducedMotion) {
-			const targetRoll = -snap.steerAngle * 0.12 * Math.min(1, snap.speed / 12);
-			this.camRoll += (targetRoll - this.camRoll) * Math.min(1, frameDt * 6);
-			this.shake *= 0.02 ** frameDt;
-		} else {
-			this.camRoll = 0;
-			this.shake = 0;
-		}
+		if (!this.settings.reducedMotion) this.shake *= 0.02 ** frameDt;
+		else this.shake = 0;
 	}
 
 	private checkFinish() {
@@ -998,7 +990,6 @@ export class Game {
 			x: this.camera.x + (Math.random() - 0.5) * shakeAmp,
 			y: this.camera.y + (Math.random() - 0.5) * shakeAmp,
 			zoom: this.camera.zoom,
-			roll: this.camRoll,
 		};
 		const ghostSnap = this.ghost.snapshot();
 		this.renderer.draw({
