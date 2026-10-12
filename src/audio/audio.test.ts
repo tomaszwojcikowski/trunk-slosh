@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioBus, engineGainFor } from "./AudioBus";
+import {
+	AudioBus,
+	engineFreqFor,
+	engineGainFor,
+	rollGainFor,
+	sloshGainFor,
+	splashGainFor,
+} from "./AudioBus";
 
 class FakeParam {
 	value = 0;
@@ -61,7 +68,7 @@ describe("AudioBus", () => {
 		vi.stubGlobal("AudioContext", FakeAudioContext);
 	});
 
-	it("arms on unlock and does not stack a new slosh tone every call", () => {
+	it("arms one continuous slosh layer instead of a new tone per tick", () => {
 		const bus = new AudioBus();
 		bus.sloshTick(1);
 		expect(starts).toBe(0);
@@ -69,10 +76,9 @@ describe("AudioBus", () => {
 		const armed = starts;
 		expect(armed).toBeGreaterThan(0);
 		bus.sloshTick(1);
-		const afterOne = starts;
-		expect(afterOne).toBe(armed + 1);
-		bus.sloshTick(1);
-		expect(starts).toBe(afterOne);
+		bus.sloshTick(0.4);
+		bus.sloshTick(0);
+		expect(starts).toBe(armed);
 	});
 
 	it("keeps the engine on the same oscillators as speed changes", () => {
@@ -81,11 +87,37 @@ describe("AudioBus", () => {
 		const armed = starts;
 		bus.engineLoad(12, 0.8);
 		bus.engineLoad(20, 1);
+		bus.surfaceRoll(20, true);
+		bus.tireScrub(0);
+		expect(starts).toBe(armed);
+	});
+
+	it("does not start one-shots while sound is off", () => {
+		const bus = new AudioBus();
+		bus.enabled = false;
+		bus.unlock();
+		const armed = starts;
+		bus.spillSplash(8);
+		bus.sloshTick(1);
+		bus.engineLoad(10, 1);
 		expect(starts).toBe(armed);
 	});
 
 	it("keeps a parked truck silent and a hard throttle loud", () => {
 		expect(engineGainFor(0, 0)).toBe(0);
 		expect(engineGainFor(22, 1)).toBeGreaterThan(0.25);
+	});
+
+	it("raises pitch with speed and throttle", () => {
+		expect(engineFreqFor(0, 1)).toBeGreaterThan(engineFreqFor(0, 0));
+		expect(engineFreqFor(30, 0.2)).toBeGreaterThan(engineFreqFor(5, 0.2));
+	});
+
+	it("scales slosh, splash and sand rumble, and drops them to silence", () => {
+		expect(sloshGainFor(0)).toBe(0);
+		expect(sloshGainFor(1)).toBeGreaterThan(sloshGainFor(0.2));
+		expect(splashGainFor(8)).toBeGreaterThan(splashGainFor(1));
+		expect(rollGainFor(0, true)).toBe(0);
+		expect(rollGainFor(18, true)).toBeGreaterThan(rollGainFor(18, false));
 	});
 });

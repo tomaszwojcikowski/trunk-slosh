@@ -841,8 +841,10 @@ export class Game {
 		});
 		if (snap.impact > 25 && !this.settings.reducedMotion)
 			this.shake = Math.min(1, this.shake + snap.impact / 120);
-		if (snap.wheels.some((w) => w.skid > 0.2))
-			this.audio.tireScrub(Math.max(...snap.wheels.map((w) => w.skid)));
+		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
+		this.audio.tireScrub(skid);
+		const sandy = snap.wheels.filter((w) => w.sand).length >= 2;
+		this.audio.surfaceRoll(snap.speed, sandy);
 		this.audio.engineLoad(snap.speed, Math.abs(this.input.poll(0).throttle));
 	}
 
