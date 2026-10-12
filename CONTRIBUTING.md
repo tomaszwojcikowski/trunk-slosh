@@ -34,7 +34,7 @@ VITE_BASE_PATH=/trunk-slosh/ npm run build && npm run preview
 
 ## Issue labels
 
-Use phase labels when filing work: `phase-1` … `phase-6` (see [.github/labels.md](.github/labels.md)).
+Use phase labels when filing work: `phase-1` … `phase-16` (see [.github/labels.md](.github/labels.md)).
 
 ## Pull requests
 

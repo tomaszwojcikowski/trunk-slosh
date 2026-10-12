@@ -14,6 +14,11 @@ app.innerHTML = `
           <strong id="hud-liquid" class="big-num">100%</strong>
           <div class="tank"><span id="hud-liquid-bar" data-level="ok"></span></div>
         </div>
+        <div class="slosh-row">
+          <em>Slosh</em>
+          <span class="slosh-meter"><span id="hud-slosh-bar" data-level="calm"></span></span>
+          <b id="hud-slosh">calm</b>
+        </div>
         <div class="seed-line"><em id="hud-seed">Seed</em> <em id="hud-ghost" hidden>Ghost</em></div>
       </section>
       <section class="panel panel-speed" aria-label="Speed">

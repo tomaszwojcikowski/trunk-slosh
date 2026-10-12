@@ -72,9 +72,10 @@ export function frustumSideFaces(
 	z0: number,
 	z1: number,
 	project: Projector,
+	lift?: (index: number) => number,
 ): { faces: SideFace[]; topScreen: Vec2[] } {
-	const B = base.map((p) => project(p.x, p.y, z0));
-	const T = top.map((p) => project(p.x, p.y, z1));
+	const B = base.map((p, i) => project(p.x, p.y, z0 + (lift?.(i) ?? 0)));
+	const T = top.map((p, i) => project(p.x, p.y, z1 + (lift?.(i) ?? 0)));
 	const topSign = Math.sign(signedArea(T)) || 1;
 	const c = centroid(base);
 	const faces: SideFace[] = [];

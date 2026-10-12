@@ -6,12 +6,12 @@ import {
 } from "../physics/VehicleSimulation";
 import type { Track } from "../world/Track";
 import type { GooFile } from "./goo";
-import type { ReplayRecording } from "./replay";
+import { REPLAY_VERSION, type ReplayRecording } from "./replay";
 import type { RunConfig } from "./runConfig";
 
 export function ghostMatches(rec: ReplayRecording, cfg: RunConfig): boolean {
 	return (
-		rec.version === 1 &&
+		rec.version === REPLAY_VERSION &&
 		rec.config.seed === cfg.seed &&
 		rec.config.mode === cfg.mode &&
 		rec.config.difficulty === cfg.difficulty &&

@@ -11,6 +11,8 @@ import {
 	type VehicleSnapshot,
 } from "../physics/VehicleSimulation";
 import { applyVehiclePreset } from "../physics/vehiclePresets";
+import { decayPunch, decayShake, punchZoom } from "../render/cameraMotion";
+import { chasePoint, followChase } from "../render/chaseCamera";
 import { createPresenter, type Presenter } from "../render/InkPost";
 import { type Camera, Renderer } from "../render/Renderer";
 import { TrunkIsoView } from "../render/TrunkIsoView";
@@ -20,6 +22,8 @@ import {
 	loadAchievements,
 	unlockAchievements,
 } from "./achievements";
+import { bendTarget } from "./bendAim";
+import { demoDrive } from "./demoDrive";
 import { GhostRunner, ghostMatches } from "./ghost";
 import {
 	exportGooJson,
@@ -36,6 +40,7 @@ import {
 	saveGhostRecording,
 } from "./persistence";
 import { ReplayRecorder } from "./replay";
+import { reviewJuiceInput } from "./reviewDrive";
 import {
 	CONTRACT_ABORT_RATIO,
 	finishCargoFloor,
@@ -52,6 +57,7 @@ import {
 	saveSettings,
 } from "./settings";
 import { deliverShareCard, paintShareCard } from "./shareCard";
+import { sloshFill, sloshLevel } from "./sloshMeter";
 import { nextTutorialHint, tutorialMessage } from "./tutorials";
 
 const FIXED_DT = 1 / 120;
@@ -69,6 +75,8 @@ type Hud = {
 	checkpoint: HTMLElement;
 	seed: HTMLElement;
 	g: HTMLElement;
+	slosh: HTMLElement;
+	sloshBar: HTMLElement;
 	intro: HTMLElement;
 	result: HTMLElement;
 	fail: HTMLElement;
@@ -138,6 +146,8 @@ export class Game {
 	private readonly demo = new URLSearchParams(window.location.search).has(
 		"demo",
 	);
+	private readonly review =
+		new URLSearchParams(window.location.search).get("review") === "juice";
 	private runConfig: RunConfig;
 	private settings: GameSettings;
 	private readonly stats = new RunStats();
@@ -183,6 +193,8 @@ export class Game {
 			checkpoint: root.querySelector("#hud-checkpoint")!,
 			seed: root.querySelector("#hud-seed")!,
 			g: root.querySelector("#hud-g")!,
+			slosh: root.querySelector("#hud-slosh")!,
+			sloshBar: root.querySelector("#hud-slosh-bar")!,
 			intro: root.querySelector("#overlay-intro")!,
 			result: root.querySelector("#overlay-result")!,
 			fail: root.querySelector("#overlay-fail")!,
@@ -260,13 +272,20 @@ export class Game {
 		const warmup = Number(
 			new URLSearchParams(window.location.search).get("demo"),
 		);
-		if (this.demo && warmup > 0) {
+		if (this.review) {
+			for (let t = 0; t < 2.15; t += FIXED_DT) this.simulate(FIXED_DT);
+			this.paused = true;
+			this.syncPauseUi();
+		} else if (this.demo && warmup > 0) {
 			for (let t = 0; t < Math.min(warmup, 120); t += FIXED_DT)
 				this.simulate(FIXED_DT);
+		}
+		if (this.demo || this.review) {
 			const snap = this.vehicle.snapshot();
+			const chase = chasePoint(snap.pos, snap.vel);
 			this.camera = {
-				x: snap.pos.x,
-				y: snap.pos.y,
+				x: chase.x,
+				y: chase.y,
 				zoom: this.targetZoom(snap.speed),
 			};
 		}
@@ -622,9 +641,10 @@ export class Game {
 		this.spillWindow = 0;
 		this.lastSpillVol = this.fluid.spilledVolume;
 		this.lastWheel = [null, null, null, null];
+		const parked = chasePoint(this.track.start, { x: 0, y: 0 });
 		this.camera = {
-			x: this.track.start.x,
-			y: this.track.start.y,
+			x: parked.x,
+			y: parked.y,
 			zoom: this.targetZoom(0),
 		};
 		this.hud.intro.hidden = false;
@@ -662,15 +682,7 @@ export class Game {
 	/** Lookahead pursuit along the centerline; powers the `?demo` attract mode. */
 	private autopilot(): DriveInput {
 		const snap = this.vehicle.snapshot();
-		const along = this.track.query(snap.pos).along;
-		const target = this.track.pointAt(along + 10 + snap.speed * 0.6).p;
-		let err =
-			Math.atan2(target.y - snap.pos.y, target.x - snap.pos.x) - snap.angle;
-		err = Math.atan2(Math.sin(err), Math.cos(err));
-		return {
-			throttle: snap.speed < 15 - Math.abs(err) * 22 ? 0.5 : -0.2,
-			steer: Math.max(-1, Math.min(1, err * 2.2)),
-		};
+		return demoDrive(this.track, snap.pos, snap.angle, snap.speed);
 	}
 
 	private simulate(dt: number) {
@@ -679,13 +691,20 @@ export class Game {
 			return;
 		}
 
-		const drive =
-			this.phase === "finished" || this.phase === "failed"
-				? { throttle: this.vehicle.snapshot().speed > 0.5 ? -0.5 : 0, steer: 0 }
+		const drive = this.review
+			? reviewJuiceInput(this.elapsed)
+			: this.phase === "finished" || this.phase === "failed"
+				? {
+						throttle: this.vehicle.snapshot().speed > 0.5 ? -0.5 : 0,
+						steer: 0,
+					}
 				: this.demo
 					? this.autopilot()
 					: this.input.poll(dt);
-		if (this.phase === "ready" && (this.input.engaged || this.demo)) {
+		if (
+			this.phase === "ready" &&
+			(this.input.engaged || this.demo || this.review)
+		) {
 			this.phase = "driving";
 			this.hud.intro.hidden = true;
 			this.audio.unlock();
@@ -778,21 +797,27 @@ export class Game {
 		const angle = this.vehicle.angle;
 		const c = Math.cos(angle);
 		const s = Math.sin(angle);
+		const z = this.vehicle.snapshot().z;
 		return {
 			x: pos.x,
 			y: pos.y,
-			z: TRUNK_LIP_HEIGHT,
+			z: z + TRUNK_LIP_HEIGHT,
 			vx: base.x + relVel.x * c - relVel.y * s,
 			vy: base.y + relVel.x * s + relVel.y * c,
 			vz: 0.4,
 			volume,
+			groundZ: this.track.heightAt(this.track.query(pos).along),
 		};
 	}
 
 	private emitSpills(events: SpillEvent[]) {
 		this.particles.emit(events);
 		for (const e of events) this.spillWindow += e.volume;
-		if (events.length && this.settings.cameraPunch)
+		if (
+			events.length &&
+			this.settings.cameraPunch &&
+			!this.settings.reducedMotion
+		)
 			this.punch = Math.min(1, this.punch + 0.35);
 	}
 
@@ -818,7 +843,12 @@ export class Game {
 			const prev = this.lastWheel[i];
 			if (w.skid > 0.12 && snap.speed > 1) {
 				if (prev)
-					this.particles.addSkid(prev, w.world, w.skid * (w.sand ? 0.6 : 1));
+					this.particles.addSkid(
+						prev,
+						w.world,
+						w.skid * (w.sand ? 0.6 : 1),
+						this.track.heightAt(this.track.query(w.world).along),
+					);
 				this.lastWheel[i] = { ...w.world };
 			} else {
 				this.lastWheel[i] = null;
@@ -836,11 +866,13 @@ export class Game {
 					-snap.vel.x * 0.15 + (Math.random() - 0.5) * 1.5,
 					-snap.vel.y * 0.15 + (Math.random() - 0.5) * 1.5,
 					0.35 + Math.random() * 0.35,
+					snap.z,
 				);
 			}
 		});
 		if (snap.impact > 25 && !this.settings.reducedMotion)
 			this.shake = Math.min(1, this.shake + snap.impact / 120);
+		this.audio.impactThud(snap.impact);
 		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
 		this.audio.tireScrub(skid);
 		const sandy = snap.wheels.filter((w) => w.sand).length >= 2;
@@ -849,24 +881,25 @@ export class Game {
 	}
 
 	private updateCamera(frameDt: number, snap: VehicleSnapshot) {
-		const look = Math.min(1, snap.speed / 25) * 0.55;
-		const tx = snap.pos.x + snap.vel.x * look;
-		const ty = snap.pos.y + snap.vel.y * look;
-		const k = 1 - 0.02 ** frameDt;
-		this.camera.x += (tx - this.camera.x) * k;
-		this.camera.y += (ty - this.camera.y) * k;
-		let zoom = this.targetZoom(snap.speed);
-		if (
-			this.settings.cameraPunch &&
-			!this.settings.reducedMotion &&
-			this.punch > 0
-		) {
-			zoom *= 1 + this.punch * 0.08;
-			this.punch *= 0.05 ** frameDt;
-		}
+		const reduced = this.settings.reducedMotion;
+		const target = chasePoint(snap.pos, snap.vel);
+		const followed = followChase(this.camera, target, frameDt);
+		this.camera.x = followed.x;
+		this.camera.y = followed.y;
+		const zoom = punchZoom(
+			this.targetZoom(snap.speed),
+			this.punch,
+			reduced,
+			this.settings.cameraPunch,
+		);
+		this.punch = decayPunch(
+			this.punch,
+			frameDt,
+			reduced,
+			this.settings.cameraPunch,
+		);
 		this.camera.zoom += (zoom - this.camera.zoom) * (1 - 0.2 ** frameDt);
-		if (!this.settings.reducedMotion) this.shake *= 0.02 ** frameDt;
-		else this.shake = 0;
+		this.shake = decayShake(this.shake, frameDt, reduced);
 	}
 
 	private checkFinish() {
@@ -968,6 +1001,15 @@ export class Game {
 			`${Math.min(this.stats.checkpointIndex, this.track.checkpoints.length)}/${this.track.checkpoints.length}`,
 		);
 		this.setText(this.hud.g, snap.gForce.toFixed(2));
+		const slosh = this.fluid.sloshSpeed();
+		const band = sloshLevel(slosh);
+		this.setText(this.hud.slosh, band);
+		const fill = `${(sloshFill(slosh) * 100).toFixed(0)}%`;
+		if (this.hudCache.get(this.hud.sloshBar) !== `${band}:${fill}`) {
+			this.hudCache.set(this.hud.sloshBar, `${band}:${fill}`);
+			this.hud.sloshBar.style.width = fill;
+			this.hud.sloshBar.dataset.level = band;
+		}
 	}
 
 	private frame(now: number) {
@@ -1005,6 +1047,7 @@ export class Game {
 			camera: cam,
 			time: this.clock,
 			debug: this.debug,
+			chevron: bendTarget(this.track, snap.pos),
 		});
 
 		const pr = this.renderer.canvas.width / Math.max(1, this.wrap.clientWidth);

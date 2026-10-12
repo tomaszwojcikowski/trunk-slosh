@@ -3,6 +3,7 @@ import {
 	isoCameraPixelOffset,
 	isoDepth,
 	isoGroundTransform,
+	isoInView,
 	isoProject,
 	isoWorldToScreen,
 } from "./isoProject";
@@ -61,6 +62,14 @@ describe("isoProject", () => {
 		);
 		expect(screen.x).toBeCloseTo(m.a * point.x + m.c * point.y + m.e, 5);
 		expect(screen.y).toBeCloseTo(m.b * point.x + m.d * point.y + m.f, 5);
+	});
+
+	it("keeps a tall prop whose base is just off the bottom", () => {
+		const half = 10;
+		const dx = 13;
+		const dy = 13;
+		expect(isoInView(dx, dy, 0.4, 0, half, half)).toBe(false);
+		expect(isoInView(dx, dy, 0.4, 2.4, half, half)).toBe(true);
 	});
 
 	it("projects camera hatch offsets in scene pixels", () => {

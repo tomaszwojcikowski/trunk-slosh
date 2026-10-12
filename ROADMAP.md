@@ -227,18 +227,16 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–6 are shipped (v0.7.1). On top of that checklist, the main view is **true isometric**: 30° ground axes, equal foreshortening on x/y/z, solid props, and the liquid drawn inside the bed. The camera does not roll.
+Phases 0–11 are shipped on this line (v0.12.0). The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank, and a short ramp can leave the ground. The HUD has a slosh meter and a next-bend chevron. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a hard hit plays an impact thud.
 
-What that still does not do, and what the next phases are for:
+The models pass and this line are one tree. The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. A sidewall mark advances with `wheelAngle`. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, a continuous slosh bed, tire scrub that is updated every step, and the impact thud.
 
-- The chase camera still aims at a point ahead of the truck in world x/y, so the truck stays near the middle of the screen instead of low in the frame with the road up-screen.
-- Culling is already in projected space, but callers pass height `0`, so a tall cactus whose base is just off-screen pops even when its top should be visible.
-- Every archetype is a flat ribbon. The tub never feels a hill, and the third axis is only used by droplets and prop height.
-- The iso frame hides the next bend, and the HUD shows cargo left but not how hard the surface is moving.
-- Keyboard and touch are the only inputs.
-- Wheels do not spin, the body does not squat, and a collision has no sound of its own.
+What the next phases are still for:
 
-A separate change thickens the pickup model and replaces the single engine tone with a layered mix. Phases 7–11 do not wait on it.
+- Banking moves the liquid. The ribbon stays level across its width. Boulder steps and the ramp read only as a slow rise. Shadows are a flat offset on the local ground plane.
+- The ink pass is still one fragment shader: Sobel, five cel bands, world-anchored hatch, animated grain, vignette. Grain makes a full-frame hash noisy. The Phase 7 check is geometric (the truck stays in the lower half).
+- Thick, water, and volatile cargo share the slosh bed. Only the tub color changes. There is no separate lip accent on top of that bed.
+- Droplets and dust puffs are circles. `?review=juice` holds both on screen.
 
 ---
 
@@ -254,10 +252,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] Screen-space lookahead: convert the chase point through the iso projection before applying zoom, so speed looks ahead *up the screen* rather than only along world +x/+y.
-- [ ] Pass real heights into the existing projected `inView` test for obstacles, cacti, and flags. Today those callers pass `0`.
-- [ ] Reduced-motion copy and behavior: shake and spill punch only. No roll control, no roll promise.
-- [ ] One golden-frame check for `?demo=` (pixel sample or hash with a stated tolerance) so a model or camera change fails CI on purpose.
+- [x] Screen-space lookahead: convert the chase point through the iso projection before applying zoom, so speed looks ahead *up the screen* rather than only along world +x/+y.
+- [x] Pass real heights into the existing projected `inView` test for obstacles, cacti, and flags. Today those callers pass `0`.
+- [x] Reduced-motion copy and behavior: shake and spill punch only. No roll control, no roll promise.
+- [x] One golden-frame check for `?demo=` (pixel sample or hash with a stated tolerance) so a model or camera change fails CI on purpose.
 
 **Acceptance criteria**
 
@@ -285,11 +283,11 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A height profile on the centerline, pure function of the seed and archetype. Flats stay within a centimeter of z = 0.
-- [ ] An explicit grade force on the chassis. Leave Matter’s gravity at zero so the tire model stays the integrator.
-- [ ] Add the grade’s gravity to the fluid pseudo-acceleration (`FluidLayer` already adds −a). A resting tub on a slope shifts its centroid downhill.
-- [ ] Draw the road as a ribbon that follows the height. Props, puddles, and shadows sit on the local ground height.
-- [ ] Replay and conservation tests stay valid: height is part of the seed, mass is still conserved.
+- [x] A height profile on the centerline, pure function of the seed and archetype. Flats stay within a centimeter of z = 0.
+- [x] An explicit grade force on the chassis. Leave Matter’s gravity at zero so the tire model stays the integrator.
+- [x] Add the grade’s gravity to the fluid pseudo-acceleration (`FluidLayer` already adds −a). A resting tub on a slope shifts its centroid downhill.
+- [x] Draw the road as a ribbon that follows the height. Props, puddles, and shadows sit on the local ground height.
+- [x] Replay and conservation tests stay valid: height is part of the seed, mass is still conserved.
 
 **Acceptance criteria**
 
@@ -319,9 +317,9 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A next-bend chevron (or a short screen-space ribbon) aimed at `Track.pointAt` a fixed distance ahead. It uses the iso projection, so it sits on the road.
-- [ ] A HUD slosh meter fed by `FluidLayer.sloshSpeed`, with thresholds for calm / moving / at the lip.
-- [ ] Gamepad: left stick steers, right trigger or right stick is the pedal, one button is the handbrake. Fold it into `Input.poll` so Practice, Contract, and Time trial do not grow a second control path.
+- [x] A next-bend chevron (or a short screen-space ribbon) aimed at `Track.pointAt` a fixed distance ahead. It uses the iso projection, so it sits on the road.
+- [x] A HUD slosh meter fed by `FluidLayer.sloshSpeed`, with thresholds for calm / moving / at the lip.
+- [x] Gamepad: left stick steers, right trigger or right stick is the pedal, one button is the handbrake. Fold it into `Input.poll` so Practice, Contract, and Time trial do not grow a second control path.
 
 **Acceptance criteria**
 
@@ -349,10 +347,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] Banked bends: a lateral grade into the same fluid term as Phase 8, signed by the turn.
-- [ ] Short ramps: a vertical velocity on the chassis, landing with the existing impact value. Droplets already fly in z.
-- [ ] Dry washes: a seeded dip with the sand grip, so the slow line and the fast line are different choices.
-- [ ] A cap on new dynamic bodies so `perf.test.ts` still passes.
+- [x] Banked bends: a lateral grade into the same fluid term as Phase 8, signed by the turn.
+- [x] Short ramps: a vertical velocity on the chassis, landing with the existing impact value. Droplets already fly in z.
+- [x] Dry washes: a seeded dip with the sand grip, so the slow line and the fast line are different choices.
+- [x] A cap on new dynamic bodies so `perf.test.ts` still passes.
 
 **Acceptance criteria**
 
@@ -380,10 +378,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A mark on each wheel (hub or sidewall) advances with distance traveled, including while steering.
-- [ ] Body pitch and squat read the longitudinal load transfer already computed for the tires. At rest the offset is zero.
-- [ ] An impact thud scaled by `VehicleSnapshot.impact`, with the same kind of cooldown the spill splash uses, so a scrape does not machine-gun.
-- [ ] A `?demo=` review capture that actually contains a spill droplet and a dust puff. The last visual passes never caught either on screen.
+- [x] A mark on each wheel (hub or sidewall) advances with distance traveled, including while steering.
+- [x] Body pitch and squat read the longitudinal load transfer already computed for the tires. At rest the offset is zero.
+- [x] An impact thud scaled by `VehicleSnapshot.impact`, with the same kind of cooldown the spill splash uses, so a scrape does not machine-gun.
+- [x] A `?demo=` review capture that actually contains a spill droplet and a dust puff. The last visual passes never caught either on screen.
 
 **Acceptance criteria**
 
@@ -399,6 +397,168 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 ---
 
+## Phase 12 — Seat the truck on the road
+
+**Theme:** The readable pickup and the graded scene are two drawings. Make one.
+
+**Goals**
+
+- The thicker pickup sits on `car.z`: round tires, a raised hood, bumper, grille, lamps, bed rails, and glass.
+- The wheel mark from Phase 11 turns with the round sidewall. Distance still drives `wheelAngle`.
+- Pitch lifts the body, the hood, and the cab. Hood stripes and the scoop pitch with the hood.
+- Props use the reads from the models pass, drawn at the obstacle’s stored height: a two-stage rock with a crack, cactus spines, a barrel lid, a tire-stack hub.
+
+**Deliverables**
+
+- [x] Bring the models-pass solids onto this tree’s `car.z`, pitch lift, and painter order. The tub opening stays on the bed, with no pitch term, so the clip still matches.
+- [x] A sidewall or hub mark advances with `wheelAngle`, including while steering.
+- [x] Draw the two-stage rock, cactus spines, barrel lid, and tire hub at `obstacle.z` (and flag poles at their ground height). Collision radii stay as they are.
+
+**Acceptance criteria**
+
+- A fixture projects a parked wheel’s contact at `car.z`, and a canyon truck’s contact follows `heightAt` rather than the ground plane at 0.
+- The existing wheel-angle tests still pass, including the zero-speed hold.
+- Under braking the nose is lower than the tail, and the tub floor is `car.z + BED_TOP - wallHeight`.
+- Flats stay within a centimeter of z = 0. Replay blobs stay version 2.
+
+**Dependencies:** Phase 8 for height, Phase 11 for spin and pitch. The models pass on `main` is the art to bring across.
+
+**Risks**
+
+- Round tires drawn at z = 0 float on a canyon grade. Offset every solid by the stored height.
+- Pitching the glass and the hood while the tub mesh stays bed-local shears the liquid if the opening moves. Pitch the body, hood, and cab. Keep the tub opening fixed to the bed.
+
+---
+
+## Phase 13 — Read the grade
+
+**Theme:** Banking and the ramp are already forces. Make them visible, and leave the forces alone.
+
+**Goals**
+
+- A banked bend shows the inside edge higher than the outside by the bank the fluid already uses.
+- A boulder step and the ramp read as a crease or a shade step along the ribbon.
+- A prop’s shadow meets the ribbon at that prop’s ground height.
+
+**Deliverables**
+
+- [ ] Cross-slope the road quad by `bankAt`. Flats and any segment with bank 0 stay level across the width.
+- [ ] A darker band or a crease along a boulder rise and along the ramp crown, using the height profile that is already there.
+- [ ] Cast contact shadows on the local ground height. A shadow does not drop onto a neighboring segment’s z.
+
+**Acceptance criteria**
+
+- A banking fixture’s inside edge projects higher than the outside by the amount `bankAt` implies, within a stated tolerance.
+- A flats ribbon stays level across its width, within a centimeter.
+- Grade force, `liquidBodyAccel`, and replay version stay as they are.
+- `perf.test.ts` still passes. Offscreen ribbon segments stay culled.
+
+**Dependencies:** Phase 8 ribbon, Phase 10 bank, ramp, and wash.
+
+**Risks**
+
+- A drawn cross-slope steeper than the sim bank looks like a second force. Draw `bankAt`.
+- Filling the whole route was slow enough to miss a screenshot window. Keep the per-segment cull.
+
+---
+
+## Phase 14 — Ink that holds still
+
+**Theme:** One shader, comic at speed, and a capture that does not depend on grain.
+
+**Goals**
+
+- The ink pass stays a single fragment shader. Low, medium, and high hatch tiers stay the current `hatchLevel` 0 / 1 / 2.
+- A review capture can freeze grain so a region sample is stable across two frames.
+- The liquid keeps a lit band that survives cel shading, using the triangle shade and the foam color already drawn near the lip.
+
+**Deliverables**
+
+- [ ] One grain uniform. At 0 the paper grain is a constant. The default stays the current animated grain.
+- [ ] `?review=juice` and a paused `?demo=` hold can request grain 0 without a second shader.
+- [ ] Keep the lit liquid color distinct enough that the five cel bands do not fold it into the mid green. The liquid hatch mask still keeps deep-tub hue.
+
+**Acceptance criteria**
+
+- Ink off still shows the isometric scene.
+- Hatch level 0 draws no hatch lines.
+- Two frames of a paused scene with grain frozen match on a stated region. The Phase 7 check (truck in the lower half) still passes.
+- The Low tier still drops hatch levels. It does not add a shader variant.
+
+**Dependencies:** Phase 5 shader, Phase 7 golden frame, Phase 11 review capture.
+
+**Risks**
+
+- A second fragment shader for “capture mode” will drift from the game look. One shader, one uniform.
+- Cel banding can crush a thin specular into the mid band. Draw the lit color in the art pass, in a hue the liquid mask already preserves.
+
+---
+
+## Phase 15 — One mix on the graded truck
+
+**Theme:** The layered mix and the impact thud live on different lines. The player should hear both, and every loop should be able to fall silent.
+
+**Goals**
+
+- The engine is a fundamental, a detuned body, a harmonic, a sub, and exhaust noise. Parked gain stays 0.
+- Road rumble follows speed, louder and lower on sand. A dry wash already sets the sand flag, so a wash rumbles as sand.
+- Scrub, rumble, and the slosh bed are updated every step, including with a zero amount.
+- The Phase 11 impact thud stays the landing sound. A landing does not also start a second hit in the same cooldown.
+
+**Deliverables**
+
+- [x] Bring the layered bus across: `engineFreqFor`, `engineGainFor`, `rollGainFor`, `sloshGainFor`. The body layer uses a fixed fraction of the engine gain when the engine is audible, and 0 when it is parked.
+- [x] Call `tireScrub`, `surfaceRoll`, and the slosh bed every step. Scrub gain is 0 when the amount is below 0.2.
+- [ ] Continuous slosh from `sloshSpeed`, silent under the calm threshold (0.08). Add a short lip accent only when the HUD band is “lip” or a spill starts. Calm frames start no one-shot.
+- [x] Keep `impactThud` and `impactGainFor`. The cooldown still collapses two hits into one.
+
+**Acceptance criteria**
+
+- Parked `engineGainFor` is 0. Roll gain is 0 below the speed floor. Slosh gain is 0 under 0.08. Impact gain is 0 under 25.
+- A scrub update with amount 0 leaves the scrub gain at 0. The same for roll at speed 0 and slosh at energy 0.
+- Two `impactThud` calls inside the cooldown start one tone.
+- Reduced motion still clears shake and the spill punch only. It leaves the mix playing.
+
+**Dependencies:** Phase 11 thud and the slosh meter bands. The layered bus on `main` is the mix to bring across.
+
+**Risks**
+
+- Sub, exhaust, rumble, and slosh together clip on laptop speakers. Keep the master gain and the per-layer caps from the models pass.
+- Calling the old one-shot `sloshTick` on every energetic frame plus the new bed double-counts the tub. The bed is the continuous layer. The accent is lip and spill only.
+
+---
+
+## Phase 16 — Cargo voice and the spill read
+
+**Theme:** Thick and volatile already differ in the tub. They should differ in the ear, and a spill should read as liquid.
+
+**Goals**
+
+- Water keeps the Phase 15 bed. Thick cargo darkens that bed. Volatile cargo brightens it.
+- A droplet in the air is a short streak along its velocity. A dust puff is a soft shape with a second lobe, so dust and liquid are different silhouettes.
+- `?review=juice` still holds at least one droplet and one puff.
+
+**Deliverables**
+
+- [ ] A pure function from cargo preset to slosh-filter cutoff (and, if useful, splash brightness). Water is the current bed. Thick is lower. Volatile is higher. Viscosity and `colorShift` stay on the preset data that already exists.
+- [ ] Draw each droplet as a teardrop or a short streak along its flight. Keep the volume-based size.
+- [ ] Draw each puff as two overlapping lobes. The `?review=juice` pause still catches both a droplet and a puff.
+
+**Acceptance criteria**
+
+- The three cargo cutoffs are unit-tested and ordered thick &lt; water &lt; volatile.
+- Volume conservation tests still pass for thick cargo. The hue shift tests still pass.
+- A `?review=juice` frame shows a non-circular droplet and a two-lobe puff. The scripted brake still produces both.
+
+**Dependencies:** Phase 15 mix, Phase 11 review capture, Phase 3 cargo presets.
+
+**Risks**
+
+- A streak longer than the droplet’s travel in one frame reads as a ribbon. Cap the streak at a fraction of the speed step.
+- Changing splash brightness per cargo can hide a small spill. Keep the 0.3 L splash gate from the current bus.
+
+---
+
 ## Cross-cutting backlog (pull from any phase)
 
 Items that do not block a single phase but should be picked up when touching nearby code:
@@ -409,14 +569,14 @@ Items that do not block a single phase but should be picked up when touching nea
 | Controller / gamepad API | 9 | Map to existing `DriveInput` |
 | PWA manifest + offline cache | 1 or 6 | Vite PWA plugin; cache static assets only |
 | E2E smoke (Playwright) | 1 | Load page, dismiss intro, drive 2 s, no console errors |
-| Visual regression | 7 | Golden `?demo=` frame; grain makes a full-frame hash noisy |
+| Visual regression | 14 | Region sample with grain frozen; a full-frame hash stays noisy |
 | Accessibility audit | 1 + 5 | Focus order on overlays, ARIA live for spill warnings |
 
 ---
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–6 are done. New work starts at Phase 7 unless the issue says why it skips ahead.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–12 are done. Phase 15 is partly in from the models merge (layered bus, rumble, thud). New work starts at Phase 13 unless the issue says why it skips ahead.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
@@ -439,5 +599,10 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.10.x** | Phase 9 |
 | **0.11.x** | Phase 10 |
 | **0.12.x** | Phase 11 |
+| **0.13.x** | Phase 12 |
+| **0.14.x** | Phase 13 |
+| **0.15.x** | Phase 14 |
+| **0.16.x** | Phase 15 |
+| **0.17.x** | Phase 16 |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.

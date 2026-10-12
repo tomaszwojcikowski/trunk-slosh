@@ -6,6 +6,8 @@ import { rotate, type Vec2 } from "../math/vec2";
 import type { Track } from "../world/Track";
 import type { FluidFrame, FluidLayer } from "./FluidLayer";
 import { TRUNK_LOCAL } from "./trunkConstants";
+import { stepVertical, type VerticalState } from "./vertical";
+import { advanceWheelAngle, pitchFromLongAccel } from "./wheelPitch";
 
 export { TRUNK_LOCAL };
 
@@ -71,6 +73,11 @@ export type VehicleSnapshot = {
 	wheels: WheelInfo[];
 	/** Collision-induced acceleration this step (m/s²) */
 	impact: number;
+	/** Chassis height above z = 0 (m). Follows the road, then ballistic on a ramp. */
+	z: number;
+	pitch: number;
+	wheelAngle: number;
+	airborne: boolean;
 	liquidMass: number;
 	halfLength: number;
 	halfWidth: number;
@@ -95,6 +102,14 @@ export class VehicleSimulation {
 	private gSmooth = 0;
 	private impact = 0;
 	private onRoad = true;
+	private vertical: VerticalState = {
+		z: 0,
+		vz: 0,
+		airborne: false,
+		airborneTime: 0,
+	};
+	private wheelAngle = 0;
+	private liquidWorld: Vec2 = { x: 0, y: 0 };
 	private wheels: WheelInfo[] = [];
 	private comHistory: Vec2[] = [];
 	private comAccel: Vec2 = { x: 0, y: 0 };
@@ -135,6 +150,15 @@ export class VehicleSimulation {
 		this.alpha = 0;
 		this.gSmooth = 0;
 		this.impact = 0;
+		this.wheelAngle = 0;
+		const along = track.query(track.start).along;
+		this.vertical = {
+			z: track.heightAt(along),
+			vz: 0,
+			airborne: false,
+			airborneTime: 0,
+		};
+		this.liquidWorld = track.liquidAccelAt(along);
 		this.comHistory = [];
 		this.comAccel = { x: 0, y: 0 };
 		this.lastGood = { pos: { ...track.start }, angle: track.startAngle };
@@ -223,10 +247,11 @@ export class VehicleSimulation {
 	}
 
 	fluidFrame(): FluidFrame {
+		const slope = rotate(this.liquidWorld, -this.chassis.angle);
 		return {
 			accel: {
-				x: clamp(this.accelLocal.x, -60, 60),
-				y: clamp(this.accelLocal.y, -60, 60),
+				x: clamp(this.accelLocal.x - slope.x, -60, 60),
+				y: clamp(this.accelLocal.y - slope.y, -60, 60),
 			},
 			omega: this.yawRate(),
 			alpha: clamp(this.alpha, -40, 40),
@@ -255,7 +280,10 @@ export class VehicleSimulation {
 		const delta = this.steerAngle;
 
 		const locals = this.wheelLocals();
-		const sand = locals.map((l) => !track.query(this.localToWorld(l)).onRoad);
+		const sand = locals.map((l) => {
+			const q = track.query(this.localToWorld(l));
+			return !q.onRoad || track.inWash(q.along);
+		});
 		const mu = sand.map((x) => (x ? SURFACE.sand.mu : SURFACE.road.mu));
 		const muF = (mu[0] + mu[1]) / 2;
 		const muR = (mu[2] + mu[3]) / 2;
@@ -371,10 +399,16 @@ export class VehicleSimulation {
 				{ x: f.x * NEWTON, y: f.y * NEWTON },
 			);
 		};
+		const gradeWorld = this.vertical.airborne
+			? { x: 0, y: 0 }
+			: track.gradeForceAt(roadQ.along);
+		const gradeLocal = rotate(gradeWorld, -angle);
+
 		apply({ x: s.a, y: 0 }, frontF);
 		apply({ x: -s.b, y: 0 }, rearF);
 		apply({ x: 0, y: 0 }, { x: Fres, y: 0 });
 		apply(com, fluidF);
+		apply({ x: 0, y: 0 }, { x: gradeLocal.x * m, y: gradeLocal.y * m });
 
 		const expected = rotate(
 			{
@@ -383,6 +417,8 @@ export class VehicleSimulation {
 			},
 			angle,
 		);
+		expected.x += gradeWorld.x;
+		expected.y += gradeWorld.y;
 
 		Engine.update(this.engine, dt * 1000);
 
@@ -410,6 +446,13 @@ export class VehicleSimulation {
 		this.accelLocal = rotate(aWorld, -c.angle);
 		this.alpha = (this.yawRate() - omega) / dt;
 		this.impact = Math.hypot(aWorld.x - expected.x, aWorld.y - expected.y);
+		this.wheelAngle = advanceWheelAngle(this.wheelAngle, speed, dt);
+		const landed = this.integrateVertical(dt, track);
+		this.impact += landed;
+		const qNow = track.query({ x: c.position.x, y: c.position.y });
+		this.liquidWorld = this.vertical.airborne
+			? { x: 0, y: 0 }
+			: track.liquidAccelAt(qNow.along);
 		const g = Math.hypot(this.accelLocal.x, this.accelLocal.y) / G;
 		this.gSmooth += (Math.min(g, 3) - this.gSmooth) * Math.min(1, dt * 8);
 
@@ -439,6 +482,23 @@ export class VehicleSimulation {
 		}));
 	}
 
+	get airborneTime(): number {
+		return this.vertical.airborneTime;
+	}
+
+	private integrateVertical(dt: number, track: Track): number {
+		const q = track.query({
+			x: this.chassis.position.x,
+			y: this.chassis.position.y,
+		});
+		const speed = Math.hypot(this.velocityWorld().x, this.velocityWorld().y);
+		const ground = track.heightAt(q.along);
+		const ahead = track.heightAt(q.along + Math.max(speed, 0) * dt);
+		const stepped = stepVertical(this.vertical, dt, ground, ahead, speed);
+		this.vertical = stepped.state;
+		return stepped.landedImpact;
+	}
+
 	snapshot(liquidMass = 0): VehicleSnapshot {
 		const v = this.velocityWorld();
 		return {
@@ -457,6 +517,10 @@ export class VehicleSimulation {
 				sand: w.sand,
 			})),
 			impact: this.impact,
+			z: this.vertical.z,
+			pitch: pitchFromLongAccel(this.accelLocal.x),
+			wheelAngle: this.wheelAngle,
+			airborne: this.vertical.airborne,
 			liquidMass,
 			halfLength: this.spec.halfLength,
 			halfWidth: this.spec.halfWidth,

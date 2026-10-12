@@ -73,3 +73,21 @@ export function isoCameraPixelOffset(camera: IsoCamera, scale: number) {
 	const p = isoProject(camera.x, camera.y, 0);
 	return { x: p.x * scale, y: p.y * scale };
 }
+
+/**
+ * Projected-space cull. `h` is the drawn height in meters (z subtracts 1:1 from screen y),
+ * so a prop whose base is just off-screen still draws when its top is inside the frame.
+ */
+export function isoInView(
+	dx: number,
+	dy: number,
+	r: number,
+	h: number,
+	halfW: number,
+	halfH: number,
+): boolean {
+	const sx = (dx - dy) * ISO_COS;
+	const sy = (dx + dy) * ISO_SIN;
+	const m = r * 1.3 + 1;
+	return Math.abs(sx) < halfW + m && sy > -halfH - m && sy - h < halfH + m;
+}

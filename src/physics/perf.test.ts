@@ -22,4 +22,24 @@ describe("simulation perf budget", () => {
 		const ms = performance.now() - t0;
 		expect(ms).toBeLessThan(250);
 	});
+
+	it("keeps the budget on a boulder seed with a ramp and a wash", () => {
+		const track = new Track(2, { archetype: "boulder" });
+		expect(track.archetype).toBe("boulder");
+		expect(track.furniture).not.toBeNull();
+		const vehicle = new VehicleSimulation();
+		const fluid = new FluidLayer();
+		vehicle.reset(track);
+		const t0 = performance.now();
+		for (let i = 0; i < 120; i++) {
+			vehicle.step(
+				1 / 120,
+				{ throttle: 0.8, steer: Math.sin(i / 8) * 0.4 },
+				track,
+				fluid,
+			);
+			fluid.step(1 / 120, vehicle.fluidFrame());
+		}
+		expect(performance.now() - t0).toBeLessThan(250);
+	});
 });
