@@ -104,6 +104,19 @@ describe("AudioBus", () => {
 		expect(starts).toBe(armed);
 	});
 
+	it("accents the lip once per cooldown and stays quiet when calm", () => {
+		const bus = new AudioBus();
+		bus.unlock();
+		const armed = starts;
+		bus.lipAccent(0);
+		expect(starts).toBe(armed);
+		bus.lipAccent(0.1);
+		const once = starts;
+		expect(once).toBeGreaterThan(armed);
+		bus.lipAccent(0.1);
+		expect(starts).toBe(once);
+	});
+
 	it("thuds once per cooldown and stays quiet under the impact threshold", () => {
 		expect(impactGainFor(24)).toBe(0);
 		expect(impactGainFor(50)).toBeGreaterThan(0);

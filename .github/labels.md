@@ -20,6 +20,10 @@ Create these in **Settings → Labels** (colors are suggestions):
 | `phase-14` | Ink grain freeze and a liquid specular that survives cel |
 | `phase-15` | One mix: layers, decaying scrub, thud, lip accent |
 | `phase-16` | Cargo voice and a spill that reads as liquid |
+| `phase-17` | Short-wheelbase axles on the drawn truck |
+| `phase-18` | Grade and airborne reads, hints, and results |
+| `phase-19` | Difficulty scales the hill; medium stays put |
+| `phase-20` | Airborne mix: no rumble, no throttle load |
 | `bug` | Incorrect behavior |
 | `feature` | New player-facing capability |
 | `physics/rendering` | Simulation or graphics pipeline |

@@ -18,6 +18,7 @@ function liquidPalette(shift: number) {
 		deep: shiftHex("#187020", shift),
 		mid: shiftHex("#4ec42c", shift),
 		light: shiftHex("#aaf354", shift),
+		specular: shiftHex("#d4ff9a", shift),
 		foam: WALL.foam,
 	};
 }
@@ -100,6 +101,7 @@ function shadeTri(
 	}
 	const lit = nx * light.x + ny * light.y + nz * light.z;
 	if ((a.z + b.z + c.z) / 3 > wallHeight * 0.88) return liquid.foam;
+	if (lit > 0.92) return liquid.specular;
 	if (lit > 0.78) return liquid.light;
 	if (lit < 0.6) return liquid.deep;
 	return liquid.mid;

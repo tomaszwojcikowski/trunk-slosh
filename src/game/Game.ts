@@ -1,4 +1,6 @@
-import { AudioBus } from "../audio/AudioBus";
+import { AudioBus, rollGainFor } from "../audio/AudioBus";
+import { airborneMix } from "../audio/airborneMix";
+import { lipAccentGain, sloshCutoffFor } from "../audio/cargoVoice";
 import { Input } from "../input/Input";
 import type { Vec2 } from "../math/vec2";
 import { FluidLayer } from "../physics/FluidLayer";
@@ -13,7 +15,11 @@ import {
 import { applyVehiclePreset } from "../physics/vehiclePresets";
 import { decayPunch, decayShake, punchZoom } from "../render/cameraMotion";
 import { chasePoint, followChase } from "../render/chaseCamera";
-import { createPresenter, type Presenter } from "../render/InkPost";
+import {
+	captureGrain,
+	createPresenter,
+	type Presenter,
+} from "../render/InkPost";
 import { type Camera, Renderer } from "../render/Renderer";
 import { TrunkIsoView } from "../render/TrunkIsoView";
 import { resolveArchetype, Track } from "../world/Track";
@@ -33,6 +39,7 @@ import {
 	parseGoo,
 	saveStoredGoo,
 } from "./goo";
+import { airborneLabel, gradeLabel } from "./gradeRead";
 import { DISCUSSIONS_URL, scoreBlurb } from "./leaderboard";
 import {
 	loadGhostRecording,
@@ -75,6 +82,8 @@ type Hud = {
 	checkpoint: HTMLElement;
 	seed: HTMLElement;
 	g: HTMLElement;
+	grade: HTMLElement;
+	air: HTMLElement;
 	slosh: HTMLElement;
 	sloshBar: HTMLElement;
 	intro: HTMLElement;
@@ -193,6 +202,8 @@ export class Game {
 			checkpoint: root.querySelector("#hud-checkpoint")!,
 			seed: root.querySelector("#hud-seed")!,
 			g: root.querySelector("#hud-g")!,
+			grade: root.querySelector("#hud-grade")!,
+			air: root.querySelector("#hud-air")!,
 			slosh: root.querySelector("#hud-slosh")!,
 			sloshBar: root.querySelector("#hud-slosh-bar")!,
 			intro: root.querySelector("#overlay-intro")!,
@@ -627,6 +638,7 @@ export class Game {
 					this.runConfig.mode,
 					this.runConfig.seed,
 					this.runConfig.daily,
+					this.runConfig.difficulty,
 				);
 		this.ghost.load(
 			stored && ghostMatches(stored, this.runConfig) ? stored : null,
@@ -733,6 +745,7 @@ export class Game {
 				snap.gForce,
 				this.fluid.sloshSpeed(),
 				spillDelta,
+				snap.airborne,
 			);
 			this.replay.record(dt, drive);
 			this.ghost.step();
@@ -742,6 +755,8 @@ export class Game {
 				spillDelta > 0.2,
 				drive.handbrake === true,
 				snap.gForce > 1.1,
+				Math.abs(this.track.gradeAt(this.track.query(snap.pos).along)) >= 0.02,
+				snap.airborne,
 				this.elapsed,
 			);
 		}
@@ -749,7 +764,9 @@ export class Game {
 		this.trackWheels(dt);
 		this.trackSpillPopups(dt);
 		if (spillDelta > 0.3) this.audio.spillSplash(spillDelta);
-		this.audio.sloshTick(this.fluid.sloshSpeed());
+		const slosh = this.fluid.sloshSpeed();
+		this.audio.sloshTick(slosh, sloshCutoffFor(this.runConfig.cargo));
+		this.audio.lipAccent(lipAccentGain(sloshLevel(slosh), spillDelta > 0.3));
 		this.checkFinish();
 	}
 
@@ -780,9 +797,18 @@ export class Game {
 		spilled: boolean,
 		handbrake: boolean,
 		highG: boolean,
+		onGrade: boolean,
+		airborne: boolean,
 		elapsed: number,
 	) {
-		const hint = nextTutorialHint({ spilled, handbrake, highG, elapsed });
+		const hint = nextTutorialHint({
+			spilled,
+			handbrake,
+			highG,
+			onGrade,
+			airborne,
+			elapsed,
+		});
 		if (!hint) return;
 		this.hud.tutorial.textContent = tutorialMessage(hint);
 		this.hud.tutorial.hidden = false;
@@ -876,8 +902,15 @@ export class Game {
 		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
 		this.audio.tireScrub(skid);
 		const sandy = snap.wheels.filter((w) => w.sand).length >= 2;
-		this.audio.surfaceRoll(snap.speed, sandy);
-		this.audio.engineLoad(snap.speed, Math.abs(this.input.poll(0).throttle));
+		const throttle = Math.abs(this.input.poll(0).throttle);
+		const mix = airborneMix(
+			snap.speed,
+			throttle,
+			rollGainFor(snap.speed, sandy),
+			snap.airborne,
+		);
+		this.audio.surfaceRoll(snap.airborne ? 0 : snap.speed, sandy);
+		this.audio.engineLoad(snap.speed, mix.throttle);
 	}
 
 	private updateCamera(frameDt: number, snap: VehicleSnapshot) {
@@ -924,7 +957,7 @@ export class Game {
 			this.hud.resultTime.textContent = fmtTime(this.elapsed);
 			this.hud.resultGrade.textContent = g.letter;
 			this.hud.resultQuip.textContent = g.quip;
-			this.hud.resultStats.textContent = `Spilled ${this.stats.spilledLiters.toFixed(1)} L · peak slosh ${this.stats.peakSlosh.toFixed(2)} m/s · off-road ${this.stats.offRoadTime.toFixed(1)} s · max ${this.stats.peakG.toFixed(2)} g`;
+			this.hud.resultStats.textContent = `Spilled ${this.stats.spilledLiters.toFixed(1)} L · peak slosh ${this.stats.peakSlosh.toFixed(2)} m/s · off-road ${this.stats.offRoadTime.toFixed(1)} s · air ${this.stats.airborneTime.toFixed(1)} s · max ${this.stats.peakG.toFixed(2)} g`;
 			this.hud.resultSeed.textContent = this.runConfig.daily
 				? `Daily ${this.runConfig.seed}`
 				: `Seed ${this.runConfig.seed}`;
@@ -935,6 +968,7 @@ export class Game {
 				g.letter,
 				kept,
 				this.elapsed,
+				this.runConfig.difficulty,
 			);
 			if (best && !this.runConfig.customGoo) {
 				saveGhostRecording(
@@ -942,6 +976,7 @@ export class Game {
 					this.runConfig.seed,
 					this.runConfig.daily,
 					this.replay.export(this.runConfig),
+					this.runConfig.difficulty,
 				);
 			}
 			const unlocked = unlockAchievements({
@@ -1001,6 +1036,11 @@ export class Game {
 			`${Math.min(this.stats.checkpointIndex, this.track.checkpoints.length)}/${this.track.checkpoints.length}`,
 		);
 		this.setText(this.hud.g, snap.gForce.toFixed(2));
+		this.setText(
+			this.hud.grade,
+			gradeLabel(this.track.gradeAt(this.track.query(snap.pos).along)),
+		);
+		this.setText(this.hud.air, airborneLabel(snap.airborne));
 		const slosh = this.fluid.sloshSpeed();
 		const band = sloshLevel(slosh);
 		this.setText(this.hud.slosh, band);
@@ -1062,6 +1102,7 @@ export class Game {
 			time: this.clock,
 			enabled: this.inkEnabled,
 			hatchLevel: hatchLevelForQuality(this.settings.quality),
+			grain: captureGrain(this.review, this.demo && this.paused),
 		});
 
 		this.updateHud(snap);

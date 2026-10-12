@@ -59,6 +59,7 @@ export class AudioBus {
 	private _enabled = true;
 	private lastSplash = -1;
 	private lastImpact = -1;
+	private lastSlosh = -1;
 	private welcomed = false;
 
 	get enabled() {
@@ -181,17 +182,28 @@ export class AudioBus {
 	}
 
 	/** Continuous slosh bed. Energy below the threshold fades it out. */
-	sloshTick(energy: number) {
+	sloshTick(energy: number, cutoff = 140) {
 		const ctx = this.ensure();
 		if (!ctx || !this.slosh) return;
 		const t = ctx.currentTime;
 		const gain = sloshGainFor(energy);
 		this.slosh.filter.frequency.setTargetAtTime(
-			120 + Math.min(160, energy * 70),
+			cutoff + Math.min(80, energy * 40),
 			t,
 			0.12,
 		);
 		this.slosh.gain.gain.setTargetAtTime(gain, t, 0.1);
+	}
+
+	/** One short tone at the lip or on a spill. Calm frames start nothing. */
+	lipAccent(gain: number) {
+		if (gain <= 0) return;
+		const ctx = this.ensure();
+		if (!ctx || !this.master) return;
+		const t = ctx.currentTime;
+		if (t - this.lastSlosh < 0.2) return;
+		this.lastSlosh = t;
+		this.tone(ctx, 168, 0.07, gain, t, "sine");
 	}
 
 	private silence() {

@@ -23,6 +23,8 @@ const quiet = {
 	spilled: false,
 	handbrake: false,
 	highG: false,
+	onGrade: false,
+	airborne: false,
 	elapsed: 1,
 };
 
@@ -35,6 +37,17 @@ describe("tutorials", () => {
 		expect(nextTutorialHint(quiet)).toBe("welcome");
 		expect(tutorialMessage("welcome").length).toBeGreaterThan(10);
 		expect(nextTutorialHint({ ...quiet, elapsed: 2 })).toBe(null);
+	});
+
+	it("shows the grade hint once on a steep slope", () => {
+		nextTutorialHint(quiet);
+		expect(nextTutorialHint({ ...quiet, elapsed: 2, onGrade: true })).toBe(
+			"grade",
+		);
+		expect(tutorialMessage("grade")).toMatch(/downhill/);
+		expect(nextTutorialHint({ ...quiet, elapsed: 3, onGrade: true })).toBe(
+			null,
+		);
 	});
 
 	it("stays hidden after dismiss, and a cleared store shows the hint again", () => {

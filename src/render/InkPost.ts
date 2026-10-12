@@ -9,7 +9,21 @@ export type InkParams = {
 	enabled: boolean;
 	/** 0 = no hatching, 1 = medium, 2 = full crosshatch */
 	hatchLevel: number;
+	/** 0 freezes paper grain to a constant. 1 is the animated grain. */
+	grain?: number;
 };
+
+/** Review captures and a paused demo hold freeze grain. */
+export function captureGrain(review: boolean, pausedDemo: boolean): number {
+	return review || pausedDemo ? 0 : 1;
+}
+
+/** Paper multiplier. Amount 0 ignores the hash so two frames match. */
+export function grainMultiplier(amount: number, hash: number): number {
+	const g = Math.max(0, Math.min(1, amount));
+	const sample = (1 - g) * 0.5 + g * hash;
+	return 0.95 + 0.07 * sample;
+}
 
 export interface Presenter {
 	readonly kind: "webgl" | "2d";
@@ -41,6 +55,7 @@ uniform float u_hatch;
 uniform float u_time;
 uniform float u_mode;
 uniform float u_hatchLevel;
+uniform float u_grain;
 
 const vec3 INK = vec3(0.07, 0.045, 0.03);
 
@@ -99,9 +114,11 @@ void main() {
 
   col = mix(col, INK, ink);
 
-  // paper grain + warm vignette
-  float grain = hash(floor(gl_FragCoord.xy / 1.5) + floor(u_time * 12.0));
-  col *= 0.95 + 0.07 * grain;
+  // paper grain + warm vignette. u_grain 0 is a constant so a capture can be sampled.
+  float gAmt = clamp(u_grain, 0.0, 1.0);
+  float grainT = floor(u_time * 12.0) * step(0.001, gAmt);
+  float grain = hash(floor(gl_FragCoord.xy / 1.5) + grainT);
+  col *= 0.95 + 0.07 * mix(0.5, grain, gAmt);
   vec2 q = v_uv - 0.5;
   col *= 1.0 - dot(q, q) * 0.6;
   col = mix(col, col * vec3(1.04, 0.98, 0.9), 0.5);
@@ -194,6 +211,7 @@ export class InkPost implements Presenter {
 			"u_time",
 			"u_mode",
 			"u_hatchLevel",
+			"u_grain",
 		]) {
 			this.uniforms[name] = gl.getUniformLocation(program, name);
 		}
@@ -224,6 +242,7 @@ export class InkPost implements Presenter {
 		gl.uniform1f(u.u_time, p.time);
 		gl.uniform1f(u.u_mode, p.enabled ? 1 : 0);
 		gl.uniform1f(u.u_hatchLevel, p.hatchLevel ?? 2);
+		gl.uniform1f(u.u_grain, p.grain ?? 1);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 	}
 }

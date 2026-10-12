@@ -53,20 +53,38 @@ export function cosineBumpGrade(
 	return (-0.5 * Math.sin(Math.PI * u) * Math.PI) / half;
 }
 
-export function profileHeight(archetype: GradeArchetype, s: number): number {
-	if (archetype === "flats") return 0;
-	if (archetype === "canyon") return CANYON_AMP * Math.sin(s / CANYON_WAVE);
-	const n = Math.floor(s / BOULDER_STEP);
-	const u = s - n * BOULDER_STEP;
-	return (n + smoothstep(u / BOULDER_RAMP)) * BOULDER_RISE;
+export type HillDifficulty = "easy" | "medium" | "hard";
+
+/** Easy hills are gentler. Medium and hard stay on the current cap. */
+export function hillScale(difficulty: HillDifficulty): number {
+	return difficulty === "easy" ? 0.55 : 1;
 }
 
-export function profileGrade(archetype: GradeArchetype, s: number): number {
+export function profileHeight(
+	archetype: GradeArchetype,
+	s: number,
+	scale = 1,
+): number {
 	if (archetype === "flats") return 0;
 	if (archetype === "canyon")
-		return (CANYON_AMP / CANYON_WAVE) * Math.cos(s / CANYON_WAVE);
+		return CANYON_AMP * scale * Math.sin(s / CANYON_WAVE);
+	const n = Math.floor(s / BOULDER_STEP);
+	const u = s - n * BOULDER_STEP;
+	return (n + smoothstep(u / BOULDER_RAMP)) * BOULDER_RISE * scale;
+}
+
+export function profileGrade(
+	archetype: GradeArchetype,
+	s: number,
+	scale = 1,
+): number {
+	if (archetype === "flats") return 0;
+	if (archetype === "canyon")
+		return ((CANYON_AMP * scale) / CANYON_WAVE) * Math.cos(s / CANYON_WAVE);
 	const u = s - Math.floor(s / BOULDER_STEP) * BOULDER_STEP;
-	return (BOULDER_RISE * smoothstepDeriv(u / BOULDER_RAMP)) / BOULDER_RAMP;
+	return (
+		(BOULDER_RISE * scale * smoothstepDeriv(u / BOULDER_RAMP)) / BOULDER_RAMP
+	);
 }
 
 export type Furniture = { rampS: number; washS: number };
@@ -85,18 +103,26 @@ export function furnitureFor(
 	};
 }
 
-export function featureHeight(s: number, furniture: Furniture | null): number {
+export function featureHeight(
+	s: number,
+	furniture: Furniture | null,
+	scale = 1,
+): number {
 	if (!furniture) return 0;
 	return (
-		RAMP_HEIGHT * cosineBump(s, furniture.rampS, RAMP_HALF) -
+		RAMP_HEIGHT * scale * cosineBump(s, furniture.rampS, RAMP_HALF) -
 		WASH_DEPTH * cosineBump(s, furniture.washS, WASH_HALF)
 	);
 }
 
-export function featureGrade(s: number, furniture: Furniture | null): number {
+export function featureGrade(
+	s: number,
+	furniture: Furniture | null,
+	scale = 1,
+): number {
 	if (!furniture) return 0;
 	return (
-		RAMP_HEIGHT * cosineBumpGrade(s, furniture.rampS, RAMP_HALF) -
+		RAMP_HEIGHT * scale * cosineBumpGrade(s, furniture.rampS, RAMP_HALF) -
 		WASH_DEPTH * cosineBumpGrade(s, furniture.washS, WASH_HALF)
 	);
 }
@@ -105,16 +131,29 @@ export function roadHeight(
 	archetype: GradeArchetype,
 	s: number,
 	furniture: Furniture | null,
+	scale = 1,
 ): number {
-	return profileHeight(archetype, s) + featureHeight(s, furniture);
+	return (
+		profileHeight(archetype, s, scale) + featureHeight(s, furniture, scale)
+	);
 }
 
 export function roadGrade(
 	archetype: GradeArchetype,
 	s: number,
 	furniture: Furniture | null,
+	scale = 1,
 ): number {
-	return profileGrade(archetype, s) + featureGrade(s, furniture);
+	return profileGrade(archetype, s, scale) + featureGrade(s, furniture, scale);
+}
+
+/** Cross-slope height. `lateral` is meters along the road's +normal. */
+export function bankedHeight(
+	centerZ: number,
+	bank: number,
+	lateral: number,
+): number {
+	return centerZ + bank * lateral;
 }
 
 export function inWashAt(s: number, furniture: Furniture | null): boolean {

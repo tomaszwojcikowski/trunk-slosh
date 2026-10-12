@@ -25,6 +25,8 @@ app.innerHTML = `
         <div class="speed-row"><strong id="hud-speed" class="big-num">0</strong><span class="unit">km/h</span></div>
         <div class="stats">
           <span><em>G</em> <b id="hud-g">0.00</b></span>
+          <span><em>Grade</em> <b id="hud-grade">level</b></span>
+          <span><em>Air</em> <b id="hud-air">ground</b></span>
           <span><em>Route</em> <b id="hud-progress">0%</b></span>
           <span><em>CP</em> <b id="hud-checkpoint">0/3</b></span>
           <span><em>Time</em> <b id="hud-time">0:00.0</b></span>
