@@ -1,6 +1,12 @@
 /** Web Audio mix. The context is created only inside a user gesture. */
 
 /** Loud enough to read as an engine on laptop speakers, silent when parked. */
+/** Silent under the collision threshold; otherwise a short thud, capped. */
+export function impactGainFor(impact: number): number {
+	if (impact < 25) return 0;
+	return Math.min(0.3, (impact - 25) * 0.004);
+}
+
 export function engineGainFor(speed: number, throttle: number): number {
 	const drive = Math.min(1, Math.abs(throttle));
 	if (speed <= 0.35 && drive <= 0.02) return 0;
@@ -23,6 +29,7 @@ export class AudioBus {
 	private _enabled = true;
 	private lastSlosh = -1;
 	private lastSplash = -1;
+	private lastImpact = -1;
 	private welcomed = false;
 
 	get enabled() {
@@ -82,6 +89,17 @@ export class AudioBus {
 		const scrub = amount < 0.2 ? 0 : Math.min(1, amount);
 		this.scrubFilter.frequency.setTargetAtTime(700 + scrub * 900, t, 0.03);
 		this.scrubGain.gain.setTargetAtTime(scrub * 0.28, t, 0.03);
+	}
+
+	impactThud(impact: number) {
+		const gain = impactGainFor(impact);
+		if (gain <= 0) return;
+		const ctx = this.ensure();
+		if (!ctx || !this.master) return;
+		const t = ctx.currentTime;
+		if (t - this.lastImpact < 0.12) return;
+		this.lastImpact = t;
+		this.tone(ctx, 68, 0.1, gain, t, "sine");
 	}
 
 	spillSplash(liters: number) {

@@ -254,10 +254,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] Screen-space lookahead: convert the chase point through the iso projection before applying zoom, so speed looks ahead *up the screen* rather than only along world +x/+y.
-- [ ] Pass real heights into the existing projected `inView` test for obstacles, cacti, and flags. Today those callers pass `0`.
-- [ ] Reduced-motion copy and behavior: shake and spill punch only. No roll control, no roll promise.
-- [ ] One golden-frame check for `?demo=` (pixel sample or hash with a stated tolerance) so a model or camera change fails CI on purpose.
+- [x] Screen-space lookahead: convert the chase point through the iso projection before applying zoom, so speed looks ahead *up the screen* rather than only along world +x/+y.
+- [x] Pass real heights into the existing projected `inView` test for obstacles, cacti, and flags. Today those callers pass `0`.
+- [x] Reduced-motion copy and behavior: shake and spill punch only. No roll control, no roll promise.
+- [x] One golden-frame check for `?demo=` (pixel sample or hash with a stated tolerance) so a model or camera change fails CI on purpose.
 
 **Acceptance criteria**
 
@@ -285,11 +285,11 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A height profile on the centerline, pure function of the seed and archetype. Flats stay within a centimeter of z = 0.
-- [ ] An explicit grade force on the chassis. Leave Matter’s gravity at zero so the tire model stays the integrator.
-- [ ] Add the grade’s gravity to the fluid pseudo-acceleration (`FluidLayer` already adds −a). A resting tub on a slope shifts its centroid downhill.
-- [ ] Draw the road as a ribbon that follows the height. Props, puddles, and shadows sit on the local ground height.
-- [ ] Replay and conservation tests stay valid: height is part of the seed, mass is still conserved.
+- [x] A height profile on the centerline, pure function of the seed and archetype. Flats stay within a centimeter of z = 0.
+- [x] An explicit grade force on the chassis. Leave Matter’s gravity at zero so the tire model stays the integrator.
+- [x] Add the grade’s gravity to the fluid pseudo-acceleration (`FluidLayer` already adds −a). A resting tub on a slope shifts its centroid downhill.
+- [x] Draw the road as a ribbon that follows the height. Props, puddles, and shadows sit on the local ground height.
+- [x] Replay and conservation tests stay valid: height is part of the seed, mass is still conserved.
 
 **Acceptance criteria**
 
@@ -319,9 +319,9 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A next-bend chevron (or a short screen-space ribbon) aimed at `Track.pointAt` a fixed distance ahead. It uses the iso projection, so it sits on the road.
-- [ ] A HUD slosh meter fed by `FluidLayer.sloshSpeed`, with thresholds for calm / moving / at the lip.
-- [ ] Gamepad: left stick steers, right trigger or right stick is the pedal, one button is the handbrake. Fold it into `Input.poll` so Practice, Contract, and Time trial do not grow a second control path.
+- [x] A next-bend chevron (or a short screen-space ribbon) aimed at `Track.pointAt` a fixed distance ahead. It uses the iso projection, so it sits on the road.
+- [x] A HUD slosh meter fed by `FluidLayer.sloshSpeed`, with thresholds for calm / moving / at the lip.
+- [x] Gamepad: left stick steers, right trigger or right stick is the pedal, one button is the handbrake. Fold it into `Input.poll` so Practice, Contract, and Time trial do not grow a second control path.
 
 **Acceptance criteria**
 
@@ -349,10 +349,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] Banked bends: a lateral grade into the same fluid term as Phase 8, signed by the turn.
-- [ ] Short ramps: a vertical velocity on the chassis, landing with the existing impact value. Droplets already fly in z.
-- [ ] Dry washes: a seeded dip with the sand grip, so the slow line and the fast line are different choices.
-- [ ] A cap on new dynamic bodies so `perf.test.ts` still passes.
+- [x] Banked bends: a lateral grade into the same fluid term as Phase 8, signed by the turn.
+- [x] Short ramps: a vertical velocity on the chassis, landing with the existing impact value. Droplets already fly in z.
+- [x] Dry washes: a seeded dip with the sand grip, so the slow line and the fast line are different choices.
+- [x] A cap on new dynamic bodies so `perf.test.ts` still passes.
 
 **Acceptance criteria**
 
@@ -380,10 +380,10 @@ A separate change thickens the pickup model and replaces the single engine tone 
 
 **Deliverables**
 
-- [ ] A mark on each wheel (hub or sidewall) advances with distance traveled, including while steering.
-- [ ] Body pitch and squat read the longitudinal load transfer already computed for the tires. At rest the offset is zero.
-- [ ] An impact thud scaled by `VehicleSnapshot.impact`, with the same kind of cooldown the spill splash uses, so a scrape does not machine-gun.
-- [ ] A `?demo=` review capture that actually contains a spill droplet and a dust puff. The last visual passes never caught either on screen.
+- [x] A mark on each wheel (hub or sidewall) advances with distance traveled, including while steering.
+- [x] Body pitch and squat read the longitudinal load transfer already computed for the tires. At rest the offset is zero.
+- [x] An impact thud scaled by `VehicleSnapshot.impact`, with the same kind of cooldown the spill splash uses, so a scrape does not machine-gun.
+- [x] A `?demo=` review capture that actually contains a spill droplet and a dust puff. The last visual passes never caught either on screen.
 
 **Acceptance criteria**
 

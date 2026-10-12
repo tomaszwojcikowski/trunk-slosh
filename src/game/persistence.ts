@@ -1,4 +1,4 @@
-import type { ReplayRecording } from "./replay";
+import { REPLAY_VERSION, type ReplayRecording } from "./replay";
 import type { RunMode } from "./runConfig";
 
 export type StoredBest = {
@@ -91,7 +91,8 @@ export function loadGhostRecording(
 	daily: boolean,
 ): ReplayRecording | null {
 	const rec = loadGhosts()[key(mode, seed, daily)];
-	if (rec?.version !== 1 || !Array.isArray(rec?.frames)) return null;
+	if (rec?.version !== REPLAY_VERSION || !Array.isArray(rec?.frames))
+		return null;
 	return rec;
 }
 

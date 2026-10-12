@@ -142,6 +142,38 @@ body,
 	animation: throb 0.6s ease-in-out infinite alternate;
 }
 
+.slosh-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 6px;
+	font-size: 13px;
+}
+
+.slosh-meter {
+	display: block;
+	width: 88px;
+	height: 12px;
+	background: #3a2c22;
+	border: 3px solid var(--ink);
+	overflow: hidden;
+}
+
+.slosh-meter span {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: #7dcea0;
+}
+
+.slosh-meter span[data-level="moving"] {
+	background: var(--yellow);
+}
+
+.slosh-meter span[data-level="lip"] {
+	background: var(--red);
+}
+
 @keyframes throb {
 	to {
 		filter: brightness(1.35);

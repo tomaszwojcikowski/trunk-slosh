@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioBus, engineGainFor } from "./AudioBus";
+import { AudioBus, engineGainFor, impactGainFor } from "./AudioBus";
 
 class FakeParam {
 	value = 0;
@@ -82,6 +82,22 @@ describe("AudioBus", () => {
 		bus.engineLoad(12, 0.8);
 		bus.engineLoad(20, 1);
 		expect(starts).toBe(armed);
+	});
+
+	it("thuds once per cooldown and stays quiet under the impact threshold", () => {
+		expect(impactGainFor(24)).toBe(0);
+		expect(impactGainFor(50)).toBeGreaterThan(0);
+		expect(impactGainFor(50)).toBeLessThanOrEqual(0.3);
+		const bus = new AudioBus();
+		bus.unlock();
+		const armed = starts;
+		bus.impactThud(10);
+		expect(starts).toBe(armed);
+		bus.impactThud(40);
+		const once = starts;
+		expect(once).toBeGreaterThan(armed);
+		bus.impactThud(80);
+		expect(starts).toBe(once);
 	});
 
 	it("keeps a parked truck silent and a hard throttle loud", () => {

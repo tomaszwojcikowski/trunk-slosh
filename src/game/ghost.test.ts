@@ -17,7 +17,7 @@ describe("ghost replay", () => {
 			},
 		}));
 		const recording: ReplayRecording = {
-			version: 1,
+			version: 2,
 			config: {
 				seed: 42,
 				mode: "practice",

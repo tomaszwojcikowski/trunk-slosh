@@ -1,4 +1,14 @@
 import type { Vec2 } from "../math/vec2";
+import {
+	bankFromCurvature,
+	type Furniture,
+	furnitureFor,
+	gradeAccel,
+	inWashAt,
+	liquidBodyAccel,
+	roadGrade,
+	roadHeight,
+} from "./grade";
 
 export type TrackSegment = {
 	a: Vec2;
@@ -22,6 +32,8 @@ export type Obstacle = {
 	shape: Vec2[];
 	/** Rolling barrel (Matter dynamic body, capped count) */
 	dynamic?: boolean;
+	/** Local ground height (m) */
+	z: number;
 };
 
 export type TrackArchetype = "flats" | "canyon" | "boulder";
@@ -56,6 +68,8 @@ export type Decor = {
 	r: number;
 	rot: number;
 	seed: number;
+	/** Local ground height (m) */
+	z: number;
 };
 
 export type TrackQuery = {
@@ -116,6 +130,8 @@ export class Track {
 	obstacles: Obstacle[] = [];
 	groundDecor: Decor[] = [];
 	roadDecor: Decor[] = [];
+	/** Ramp and wash centers. Null on flats, which stay at z = 0. */
+	furniture: Furniture | null = null;
 
 	constructor(seed = 42, options: TrackOptions = {}) {
 		this.seed = seed;
@@ -227,8 +243,58 @@ export class Track {
 		for (let i = 1; i <= 3; i++)
 			this.checkpoints.push(this.startS + (span * i) / 4);
 
+		this.furniture = furnitureFor(this.archetype, this.startS, this.finishS);
 		this.placeObstacles(rand);
 		this.placeDecor(rand);
+	}
+
+	heightAt(s: number): number {
+		return roadHeight(this.archetype, s, this.furniture);
+	}
+
+	/** dh/ds along the centerline, including a ramp or wash when one is under `s`. */
+	gradeAt(s: number): number {
+		return roadGrade(this.archetype, s, this.furniture);
+	}
+
+	/** Signed lateral slope. Positive banks a left turn so liquid goes outside. */
+	bankAt(s: number): number {
+		return bankFromCurvature(this.curvatureAt(s));
+	}
+
+	curvatureAt(s: number): number {
+		const ds = 3;
+		const s0 = Math.max(0, s - ds);
+		const s1 = Math.min(this.totalLength, s + ds);
+		const span = s1 - s0;
+		if (span < 1e-3) return 0;
+		let d = this.pointAt(s1).angle - this.pointAt(s0).angle;
+		d = Math.atan2(Math.sin(d), Math.cos(d));
+		return d / span;
+	}
+
+	inWash(s: number): boolean {
+		return inWashAt(s, this.furniture);
+	}
+
+	private frameAt(s: number): { t: Vec2; n: Vec2 } {
+		const p = this.pointAt(s);
+		return {
+			t: { x: Math.cos(p.angle), y: Math.sin(p.angle) },
+			n: p.n,
+		};
+	}
+
+	/** Longitudinal grade acceleration for the chassis. Banking is not included. */
+	gradeForceAt(s: number): Vec2 {
+		const { t } = this.frameAt(s);
+		return gradeAccel(this.gradeAt(s), t);
+	}
+
+	/** Grade plus bank, the body acceleration the liquid feels. */
+	liquidAccelAt(s: number): Vec2 {
+		const { t, n } = this.frameAt(s);
+		return liquidBodyAccel(this.gradeAt(s), this.bankAt(s), t, n);
 	}
 
 	private placeObstacles(rand: () => number) {
@@ -290,6 +356,7 @@ export class Track {
 				rot: rand() * Math.PI * 2,
 				shape,
 				dynamic,
+				z: this.heightAt(s),
 			});
 		}
 	}
@@ -310,6 +377,7 @@ export class Track {
 					r: 3 + rand() * 7,
 					rot: rand() * Math.PI,
 					seed: rand(),
+					z: this.heightAt(s),
 				});
 			}
 		}
@@ -334,6 +402,7 @@ export class Track {
 				r: kind === "crack" ? 1.2 + rand() * 2 : 0.15 + rand() * 0.35,
 				rot: rand() * Math.PI * 2,
 				seed: rand(),
+				z: this.heightAt(s),
 			});
 		}
 
@@ -347,6 +416,7 @@ export class Track {
 				r: 0.8 + rand() * 1.6,
 				rot: rand() * Math.PI * 2,
 				seed: rand(),
+				z: this.heightAt(s),
 			});
 		}
 	}

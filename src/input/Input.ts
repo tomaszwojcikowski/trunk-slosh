@@ -1,4 +1,10 @@
 import type { DriveInput } from "../physics/VehicleSimulation";
+import {
+	driveFromPad,
+	type PadAxes,
+	padActive,
+	padFromGamepad,
+} from "./gamepad";
 
 export type InputAction =
 	| "restart"
@@ -23,8 +29,13 @@ export class Input {
 	private touchThrottle = 0;
 	private touchHandbrake = false;
 	private listeners: ((a: InputAction) => void)[] = [];
+	private padOverride: PadAxes | null = null;
 
 	constructor(root: HTMLElement) {
+		if (typeof window === "undefined") {
+			this.setupTouch(root);
+			return;
+		}
 		window.addEventListener("keydown", (e) => {
 			if (
 				["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(
@@ -61,6 +72,16 @@ export class Input {
 
 	onAction(listener: (a: InputAction) => void) {
 		this.listeners.push(listener);
+	}
+
+	/** Test hook and scripted pads. A connected pad still wins when this is null. */
+	setPad(pad: PadAxes | null) {
+		this.padOverride = pad;
+	}
+
+	holdKey(code: string, down: boolean) {
+		if (down) this.keys.add(code);
+		else this.keys.delete(code);
 	}
 
 	/** True once the player touches any drive control */
@@ -146,10 +167,26 @@ export class Input {
 			steer = this.touchSteer * this.touchSensitivityMul;
 		if (Math.abs(this.touchThrottle) > 0.05) throttle = this.touchThrottle;
 
-		return {
+		const keys: DriveInput = {
 			throttle: Math.max(-1, Math.min(1, throttle)),
 			steer: Math.max(-1, Math.min(1, steer)),
 			handbrake: this.keys.has("Space") || this.touchHandbrake,
 		};
+		const pad = this.readPad();
+		if (pad && padActive(pad)) return driveFromPad(pad);
+		return keys;
+	}
+
+	private readPad(): PadAxes | null {
+		if (this.padOverride) return this.padOverride;
+		const nav = globalThis.navigator;
+		if (!nav?.getGamepads) return null;
+		const pads = nav.getGamepads();
+		for (const gp of pads) {
+			if (!gp) continue;
+			const pad = padFromGamepad(gp);
+			if (padActive(pad)) return pad;
+		}
+		return null;
 	}
 }

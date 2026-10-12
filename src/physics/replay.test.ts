@@ -5,7 +5,7 @@ import { FluidLayer } from "./FluidLayer";
 import { VehicleSimulation } from "./VehicleSimulation";
 
 const FIXTURE: ReplayRecording = {
-	version: 1,
+	version: 2,
 	config: {
 		seed: 42,
 		mode: "practice",

@@ -6,8 +6,11 @@ export type ReplayFrame = {
 	input: DriveInput;
 };
 
+/** Bumped when grade forces joined the sim. Pre-grade blobs are not treated as matching. */
+export const REPLAY_VERSION = 2;
+
 export type ReplayRecording = {
-	version: 1;
+	version: typeof REPLAY_VERSION;
 	config: Pick<
 		RunConfig,
 		"seed" | "mode" | "difficulty" | "cargo" | "vehicle" | "archetype"
@@ -33,7 +36,7 @@ export class ReplayRecorder {
 
 	export(config: RunConfig): ReplayRecording {
 		return {
-			version: 1,
+			version: REPLAY_VERSION,
 			config: {
 				seed: config.seed,
 				mode: config.mode,

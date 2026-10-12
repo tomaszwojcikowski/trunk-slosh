@@ -10,6 +10,8 @@ export type SpillEvent = {
 	vz: number;
 	/** Liquid volume (m³) */
 	volume: number;
+	/** Ground height the droplet lands on (m). Defaults to 0. */
+	groundZ?: number;
 };
 
 export type Droplet = {
@@ -20,6 +22,7 @@ export type Droplet = {
 	vy: number;
 	vz: number;
 	volume: number;
+	groundZ: number;
 };
 export type Splat = {
 	x: number;
@@ -27,6 +30,7 @@ export type Splat = {
 	r: number;
 	life: number;
 	seed: number;
+	z: number;
 };
 export type Puff = {
 	x: number;
@@ -36,6 +40,7 @@ export type Puff = {
 	r: number;
 	life: number;
 	maxLife: number;
+	z: number;
 };
 export type Skid = {
 	x1: number;
@@ -44,6 +49,7 @@ export type Skid = {
 	y2: number;
 	strength: number;
 	life: number;
+	z: number;
 };
 export type Popup = {
 	x: number;
@@ -87,6 +93,8 @@ export class ParticlePool {
 				p.vx += (ev.vx - p.vx) * w;
 				p.vy += (ev.vy - p.vy) * w;
 				p.vz += (ev.vz - p.vz) * w;
+				p.groundZ =
+					(p.groundZ ?? 0) + ((ev.groundZ ?? 0) - (p.groundZ ?? 0)) * w;
 				p.volume += ev.volume;
 			} else {
 				this.pending = { ...ev };
@@ -113,17 +121,18 @@ export class ParticlePool {
 				vy: e.vy + (Math.random() - 0.5) * 1.2,
 				vz: e.vz + Math.random() * 0.8,
 				volume: e.volume / n,
+				groundZ: e.groundZ ?? 0,
 			});
 		}
 	}
 
-	addPuff(x: number, y: number, vx: number, vy: number, size: number) {
+	addPuff(x: number, y: number, vx: number, vy: number, size: number, z = 0) {
 		if (this.puffs.length >= MAX_PUFFS) this.puffs.shift();
 		const maxLife = 0.7 + Math.random() * 0.6;
-		this.puffs.push({ x, y, vx, vy, r: size, life: maxLife, maxLife });
+		this.puffs.push({ x, y, vx, vy, r: size, life: maxLife, maxLife, z });
 	}
 
-	addSkid(from: Vec2, to: Vec2, strength: number) {
+	addSkid(from: Vec2, to: Vec2, strength: number, z = 0) {
 		if (this.skids.length >= MAX_SKIDS) this.skids.shift();
 		this.skids.push({
 			x1: from.x,
@@ -132,6 +141,7 @@ export class ParticlePool {
 			y2: to.y,
 			strength,
 			life: SKID_LIFE,
+			z,
 		});
 	}
 
@@ -149,7 +159,8 @@ export class ParticlePool {
 			d.x += d.vx * dt;
 			d.y += d.vy * dt;
 			d.z += d.vz * dt;
-			if (d.z <= 0) {
+			if (d.z <= d.groundZ) {
+				d.z = d.groundZ;
 				this.land(d);
 				this.droplets.splice(i, 1);
 			}
@@ -200,6 +211,7 @@ export class ParticlePool {
 				s.x += (d.x - s.x) * w;
 				s.y += (d.y - s.y) * w;
 				s.r = Math.min(MAX_SPLAT_R, Math.sqrt(area));
+				s.z += (d.groundZ - s.z) * w;
 				s.life = SPLAT_LIFE;
 				return;
 			}
@@ -211,6 +223,7 @@ export class ParticlePool {
 			r: Math.min(MAX_SPLAT_R, r),
 			life: SPLAT_LIFE,
 			seed: Math.random(),
+			z: d.groundZ,
 		});
 	}
 
