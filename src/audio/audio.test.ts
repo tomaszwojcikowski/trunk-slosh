@@ -51,7 +51,7 @@ class FakeAudioContext {
 	}
 	resume() {
 		this.state = "running";
-		return Promise.resolve;
+		return Promise.resolve();
 	}
 }
 
