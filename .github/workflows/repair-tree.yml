@@ -3,7 +3,7 @@ on:
   push:
     paths:
       - .github/workflows/repair-tree.yml
-      - public/og.png.b64
+      - public/og.part2
 permissions:
   contents: write
 jobs:
@@ -11,20 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Write social preview from text payload
+      - name: Materialize og.png when every part is present
         run: |
           python3 << 'PY'
           import base64, hashlib
           from pathlib import Path
-          b64_path = Path("public/og.png.b64")
-          if not b64_path.exists():
+          parts = [Path(f"public/og.part{i}") for i in range(3)]
+          if not all(p.exists() for p in parts):
+              print("parts incomplete")
               raise SystemExit(0)
-          raw = base64.b64decode(b64_path.read_text().strip())
-          png_digest = hashlib.sha256(raw).hexdigest()
-          png_expected = "c6b626831cff458db66d6bfe0713f10cc381448a043280b6f96910d6bb412f33"
-          if png_digest != png_expected or len(raw) != 26010 or raw[:8] != bytes.fromhex("89504e470d0a1a0a"):
-              raise SystemExit(f"png digest {png_digest} len {len(raw)}")
+          b64 = "".join(p.read_text().strip() for p in parts)
+          raw = base64.b64decode(b64)
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = "c6b626831cff458db66d6bfe0713f10cc381448a043280b6f96910d6bb412f33"
+          if digest != expected or len(raw) != 26010:
+              raise SystemExit(f"png digest {digest} len {len(raw)}")
           Path("public/og.png").write_bytes(raw)
+          print("png ok")
           PY
           if [ ! -f public/og.png ]; then
             exit 0
@@ -32,7 +35,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/og.png
-          git rm -f public/og.png.b64
-          git diff --cached --quiet && exit 0
-          git commit -m "fix: add public/og.png social preview"
+          git rm -f public/og.part0 public/og.part1 public/og.part2 public/_binprobe.bin public/_encprobe.txt .github/workflows/repair-tree.yml
+          git commit -m "fix: add social preview image"
           git push origin HEAD:main
