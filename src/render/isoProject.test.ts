@@ -8,24 +8,34 @@ import {
 } from "./isoProject";
 
 describe("isoProject", () => {
-	it("separates axes on the ground plane", () => {
+	it("puts the ground axes 30° off horizontal", () => {
 		const a = isoProject(1, 0, 0);
 		const b = isoProject(0, 1, 0);
 		expect(a.x).toBeCloseTo(Math.sqrt(3) / 2, 5);
 		expect(b.x).toBeCloseTo(-Math.sqrt(3) / 2, 5);
-		expect(a.y).toBeCloseTo(0.5, 5);
-		expect(b.y).toBeCloseTo(0.5, 5);
+		expect(Math.atan2(a.y, a.x)).toBeCloseTo(Math.PI / 6, 5);
+		expect(Math.atan2(b.y, -b.x)).toBeCloseTo(Math.PI / 6, 5);
+	});
+
+	it("foreshortens x, y and z equally", () => {
+		const lens = [
+			isoProject(1, 0, 0),
+			isoProject(0, 1, 0),
+			isoProject(0, 0, 1),
+		].map((p) => Math.hypot(p.x, p.y));
+		for (const l of lens) expect(l).toBeCloseTo(lens[0], 9);
 	});
 
 	it("lifts screen y when z increases", () => {
 		const low = isoProject(0, 0, 0);
 		const high = isoProject(0, 0, 0.4);
 		expect(high.y).toBeLessThan(low.y);
+		expect(high.x).toBe(low.x);
 	});
 
-	it("orders depth for painter sorting", () => {
+	it("orders depth toward the viewer above +x +y", () => {
 		expect(isoDepth(0, 0, 0)).toBeLessThan(isoDepth(1, 1, 0));
-		expect(isoDepth(1, 1, 0)).toBeGreaterThan(isoDepth(1, 1, 0.5));
+		expect(isoDepth(1, 1, 0.5)).toBeGreaterThan(isoDepth(1, 1, 0));
 	});
 
 	it("centers the camera in the ground transform", () => {
@@ -36,14 +46,14 @@ describe("isoProject", () => {
 	});
 
 	it("matches point projection with the canvas matrix", () => {
-		const camera = { x: -3, y: 8, roll: 0.12 };
+		const camera = { x: -3, y: 8 };
 		const scale = 21;
 		const m = isoGroundTransform(camera, scale, 1024, 768);
-		const point = { x: 4, y: 11, z: 0 };
+		const point = { x: 4, y: 11 };
 		const screen = isoWorldToScreen(
 			point.x,
 			point.y,
-			point.z,
+			0,
 			camera,
 			scale,
 			1024,

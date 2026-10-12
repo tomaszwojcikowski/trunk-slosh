@@ -1,11 +1,13 @@
+import type { Vec2 } from "../math/vec2";
 import type { FluidLayer } from "../physics/FluidLayer";
 import { TRUNK_LOCAL } from "../physics/trunkConstants";
-import { isoDepth, isoProject } from "./isoProject";
+import { isoProject } from "./isoProject";
 import { shiftHex } from "./liquidColor";
 import { INK } from "./Renderer";
+import { SUN } from "./sun";
 
 const WALL = {
-	wall: "#6a635c",
+	wall: "#7a736a",
 	wallShade: "#3d3833",
 	floor: "#2a2420",
 	foam: "#f2ffd0",
@@ -17,27 +19,24 @@ function liquidPalette(shift: number) {
 		mid: shiftHex("#4ec42c", shift),
 		light: shiftHex("#aaf354", shift),
 		foam: WALL.foam,
-		wall: WALL.wall,
-		wallShade: WALL.wallShade,
-		floor: WALL.floor,
 	};
 }
 
-const LIGHT = { x: -0.45, y: -0.55, z: 0.7 };
-{
-	const l = Math.hypot(LIGHT.x, LIGHT.y, LIGHT.z);
-	LIGHT.x /= l;
-	LIGHT.y /= l;
-	LIGHT.z /= l;
-}
+type P3 = { x: number; y: number; z: number };
+type Screen = { sx: number; sy: number };
+export type TubProjector = (x: number, y: number, z: number) => Screen;
 
-type Tri = {
-	p: [
-		{ x: number; y: number; z: number },
-		{ x: number; y: number; z: number },
-		{ x: number; y: number; z: number },
-	];
-	fill: string;
+export type TubMeshOptions = {
+	/** Tub-local meters (z above the tub floor) to canvas pixels */
+	toScreen: TubProjector;
+	/** Horizontal direction toward the viewer in tub-local axes */
+	toward: Vec2;
+	/** Direction toward the sun in tub-local axes */
+	light: P3;
+	/** Pixels per meter, for ink widths */
+	scale: number;
+	/** Draw the outside of the near walls (free-standing tub). Off when the tub is sunk into a bed. */
+	nearWalls: boolean;
 };
 
 export type TrunkDrawOptions = {
@@ -74,24 +73,19 @@ export function cornerHeight(
 }
 
 function shadeTri(
-	ax: number,
-	ay: number,
-	az: number,
-	bx: number,
-	by: number,
-	bz: number,
-	cx: number,
-	cy: number,
-	cz: number,
+	a: P3,
+	b: P3,
+	c: P3,
 	wallHeight: number,
+	light: P3,
 	liquid: ReturnType<typeof liquidPalette>,
 ): string {
-	const ux = bx - ax;
-	const uy = by - ay;
-	const uz = bz - az;
-	const vx = cx - ax;
-	const vy = cy - ay;
-	const vz = cz - az;
+	const ux = b.x - a.x;
+	const uy = b.y - a.y;
+	const uz = b.z - a.z;
+	const vx = c.x - a.x;
+	const vy = c.y - a.y;
+	const vz = c.z - a.z;
 	let nx = uy * vz - uz * vy;
 	let ny = uz * vx - ux * vz;
 	let nz = ux * vy - uy * vx;
@@ -104,12 +98,139 @@ function shadeTri(
 		ny = -ny;
 		nz = -nz;
 	}
-	const lit = nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z;
-	const avgZ = (az + bz + cz) / 3;
-	if (avgZ > wallHeight * 0.88) return liquid.foam;
-	if (lit > 0.55) return liquid.light;
-	if (lit < 0.2) return liquid.deep;
+	const lit = nx * light.x + ny * light.y + nz * light.z;
+	if ((a.z + b.z + c.z) / 3 > wallHeight * 0.88) return liquid.foam;
+	if (lit > 0.78) return liquid.light;
+	if (lit < 0.6) return liquid.deep;
 	return liquid.mid;
+}
+
+type Wall = { a: Vec2; b: Vec2; n: Vec2 };
+
+function tubWalls(): Wall[] {
+	const { minX, maxX, minY, maxY } = TRUNK_LOCAL;
+	return [
+		{ a: { x: minX, y: minY }, b: { x: maxX, y: minY }, n: { x: 0, y: -1 } },
+		{ a: { x: maxX, y: minY }, b: { x: maxX, y: maxY }, n: { x: 1, y: 0 } },
+		{ a: { x: maxX, y: maxY }, b: { x: minX, y: maxY }, n: { x: 0, y: 1 } },
+		{ a: { x: minX, y: maxY }, b: { x: minX, y: minY }, n: { x: -1, y: 0 } },
+	];
+}
+
+/**
+ * Tub floor, walls and liquid surface in back-to-front order: floor, far walls (inside faces),
+ * liquid, then near walls. Shared by the HUD panel and the in-world truck bed.
+ */
+export function drawTubMesh(
+	ctx: CanvasRenderingContext2D,
+	fluid: FluidLayer,
+	o: TubMeshOptions,
+) {
+	const { toScreen, toward, light } = o;
+	const liquid = liquidPalette(fluid.colorShift);
+	const wh = fluid.wallHeight;
+	const { minX, maxX, minY, maxY } = TRUNK_LOCAL;
+	const depth = (p: P3) => p.x * toward.x + p.y * toward.y + p.z;
+
+	const poly = (pts: P3[], fill: string) => {
+		ctx.beginPath();
+		pts.forEach((p, i) => {
+			const s = toScreen(p.x, p.y, p.z);
+			if (i === 0) ctx.moveTo(s.sx, s.sy);
+			else ctx.lineTo(s.sx, s.sy);
+		});
+		ctx.closePath();
+		ctx.fillStyle = fill;
+		ctx.fill();
+	};
+	const wallQuad = (w: Wall): P3[] => [
+		{ x: w.a.x, y: w.a.y, z: 0 },
+		{ x: w.b.x, y: w.b.y, z: 0 },
+		{ x: w.b.x, y: w.b.y, z: wh },
+		{ x: w.a.x, y: w.a.y, z: wh },
+	];
+	const walls = tubWalls();
+	const isNear = (w: Wall) => w.n.x * toward.x + w.n.y * toward.y > 0;
+
+	poly(
+		[
+			{ x: minX, y: minY, z: 0 },
+			{ x: maxX, y: minY, z: 0 },
+			{ x: maxX, y: maxY, z: 0 },
+			{ x: minX, y: maxY, z: 0 },
+		],
+		WALL.floor,
+	);
+	for (const w of walls) {
+		if (isNear(w)) continue;
+		const lit = -(w.n.x * light.x + w.n.y * light.y) > 0.1;
+		poly(wallQuad(w), lit ? WALL.wall : WALL.wallShade);
+	}
+
+	const tris: { depth: number; fill: string; p: [P3, P3, P3] }[] = [];
+	const cellX = (i: number) => minX + i * fluid.dx;
+	const cellY = (j: number) => minY + j * fluid.dy;
+	for (let j = 0; j < fluid.ny; j++) {
+		for (let i = 0; i < fluid.nx; i++) {
+			const z00 = cornerHeight(fluid, i, j);
+			const z10 = cornerHeight(fluid, i + 1, j);
+			const z11 = cornerHeight(fluid, i + 1, j + 1);
+			const z01 = cornerHeight(fluid, i, j + 1);
+			if (z00 + z10 + z11 + z01 < 0.008) continue;
+			const p00 = { x: cellX(i), y: cellY(j), z: z00 };
+			const p10 = { x: cellX(i + 1), y: cellY(j), z: z10 };
+			const p11 = { x: cellX(i + 1), y: cellY(j + 1), z: z11 };
+			const p01 = { x: cellX(i), y: cellY(j + 1), z: z01 };
+			for (const p of [
+				[p00, p10, p11],
+				[p00, p11, p01],
+			] as [P3, P3, P3][]) {
+				tris.push({
+					depth: (depth(p[0]) + depth(p[1]) + depth(p[2])) / 3,
+					fill: shadeTri(p[0], p[1], p[2], wh, light, liquid),
+					p,
+				});
+			}
+		}
+	}
+	tris.sort((a, b) => a.depth - b.depth);
+	for (const t of tris) {
+		poly(t.p, t.fill);
+		ctx.strokeStyle = t.fill;
+		ctx.lineWidth = 0.6;
+		ctx.stroke();
+	}
+
+	ctx.strokeStyle = "rgba(242, 255, 208, 0.85)";
+	ctx.lineWidth = Math.max(1, o.scale * 0.025);
+	for (const w of walls) {
+		if (isNear(w)) continue;
+		drawMeniscusEdge(ctx, fluid, toScreen, wh, w);
+	}
+
+	if (o.nearWalls) {
+		for (const w of walls) {
+			if (!isNear(w)) continue;
+			const lit = w.n.x * light.x + w.n.y * light.y > 0.1;
+			const quad = wallQuad(w);
+			poly(quad, lit ? WALL.wall : WALL.wallShade);
+			ctx.lineWidth = Math.max(1, o.scale * 0.02);
+			ctx.strokeStyle = INK;
+			ctx.stroke();
+		}
+	}
+
+	ctx.lineWidth = Math.max(1.5, o.scale * 0.04);
+	ctx.strokeStyle = INK;
+	ctx.lineJoin = "round";
+	ctx.beginPath();
+	for (const [k, w] of walls.entries()) {
+		const a = toScreen(w.a.x, w.a.y, wh);
+		if (k === 0) ctx.moveTo(a.sx, a.sy);
+		else ctx.lineTo(a.sx, a.sy);
+	}
+	ctx.closePath();
+	ctx.stroke();
 }
 
 function fitTransform(
@@ -118,22 +239,19 @@ function fitTransform(
 	wallHeight: number,
 	pad: number,
 ) {
-	const pts = [
-		isoProject(TRUNK_LOCAL.minX, TRUNK_LOCAL.minY, 0),
-		isoProject(TRUNK_LOCAL.maxX, TRUNK_LOCAL.maxY, 0),
-		isoProject(TRUNK_LOCAL.minX, TRUNK_LOCAL.maxY, wallHeight),
-		isoProject(TRUNK_LOCAL.maxX, TRUNK_LOCAL.minY, wallHeight),
-	];
 	let minX = Infinity;
 	let maxX = -Infinity;
 	let minY = Infinity;
 	let maxY = -Infinity;
-	for (const p of pts) {
-		minX = Math.min(minX, p.x);
-		maxX = Math.max(maxX, p.x);
-		minY = Math.min(minY, p.y);
-		maxY = Math.max(maxY, p.y);
-	}
+	for (const x of [TRUNK_LOCAL.minX, TRUNK_LOCAL.maxX])
+		for (const y of [TRUNK_LOCAL.minY, TRUNK_LOCAL.maxY])
+			for (const z of [0, wallHeight]) {
+				const p = isoProject(x, y, z);
+				minX = Math.min(minX, p.x);
+				maxX = Math.max(maxX, p.x);
+				minY = Math.min(minY, p.y);
+				maxY = Math.max(maxY, p.y);
+			}
 	const pw = maxX - minX;
 	const ph = maxY - minY;
 	const scale = Math.min((cssW - pad * 2) / pw, (cssH - pad * 2 - 8) / ph);
@@ -146,7 +264,7 @@ function fitTransform(
 	};
 }
 
-/** Isometric tub mesh (shared by HUD panel, pop-out, and in-car sprite). */
+/** Free-standing isometric tub for the HUD panel and pop-out. */
 export function drawTrunkIsometric(
 	ctx: CanvasRenderingContext2D,
 	fluid: FluidLayer,
@@ -155,7 +273,6 @@ export function drawTrunkIsometric(
 	opts: TrunkDrawOptions = {},
 ) {
 	const pad = opts.pad ?? 22;
-	const liquid = liquidPalette(fluid.colorShift);
 	const { scale, ox, oy } = fitTransform(cssW, cssH, fluid.wallHeight, pad);
 	const toScreen = (x: number, y: number, z: number) => {
 		const p = isoProject(x, y, z);
@@ -163,156 +280,17 @@ export function drawTrunkIsometric(
 	};
 
 	ctx.clearRect(0, 0, cssW, cssH);
-
-	const tris: { depth: number; tri: Tri }[] = [];
-	const addTri = (tri: Tri) => {
-		const d =
-			(isoDepth(tri.p[0].x, tri.p[0].y, tri.p[0].z) +
-				isoDepth(tri.p[1].x, tri.p[1].y, tri.p[1].z) +
-				isoDepth(tri.p[2].x, tri.p[2].y, tri.p[2].z)) /
-			3;
-		tris.push({ depth: d, tri });
-	};
-
-	const cellX = (i: number) => TRUNK_LOCAL.minX + i * fluid.dx;
-	const cellY = (j: number) => TRUNK_LOCAL.minY + j * fluid.dy;
-	const wh = fluid.wallHeight;
-	const { minX, maxX, minY, maxY } = TRUNK_LOCAL;
-
-	addTri({
-		p: [
-			{ x: minX, y: minY, z: 0 },
-			{ x: maxX, y: minY, z: 0 },
-			{ x: maxX, y: maxY, z: 0 },
-		],
-		fill: liquid.floor,
+	drawTubMesh(ctx, fluid, {
+		toScreen,
+		toward: { x: 1, y: 1 },
+		light: SUN,
+		scale,
+		nearWalls: true,
 	});
-	addTri({
-		p: [
-			{ x: minX, y: minY, z: 0 },
-			{ x: maxX, y: maxY, z: 0 },
-			{ x: minX, y: maxY, z: 0 },
-		],
-		fill: liquid.floor,
-	});
-
-	const wallSeg = (
-		ax: number,
-		ay: number,
-		bx: number,
-		by: number,
-		shadeSide: boolean,
-	) => {
-		const fill = shadeSide ? liquid.wallShade : liquid.wall;
-		addTri({
-			p: [
-				{ x: ax, y: ay, z: 0 },
-				{ x: bx, y: by, z: 0 },
-				{ x: bx, y: by, z: wh },
-			],
-			fill,
-		});
-		addTri({
-			p: [
-				{ x: ax, y: ay, z: 0 },
-				{ x: bx, y: by, z: wh },
-				{ x: ax, y: ay, z: wh },
-			],
-			fill,
-		});
-	};
-	wallSeg(minX, minY, maxX, minY, false);
-	wallSeg(maxX, minY, maxX, maxY, true);
-	wallSeg(maxX, maxY, minX, maxY, false);
-	wallSeg(minX, maxY, minX, minY, true);
-
-	for (let j = 0; j < fluid.ny; j++) {
-		for (let i = 0; i < fluid.nx; i++) {
-			const x0 = cellX(i);
-			const x1 = cellX(i + 1);
-			const y0 = cellY(j);
-			const y1 = cellY(j + 1);
-			const z00 = cornerHeight(fluid, i, j);
-			const z10 = cornerHeight(fluid, i + 1, j);
-			const z11 = cornerHeight(fluid, i + 1, j + 1);
-			const z01 = cornerHeight(fluid, i, j + 1);
-			if (z00 + z10 + z11 + z01 < 0.008) continue;
-			const p00 = { x: x0, y: y0, z: z00 };
-			const p10 = { x: x1, y: y0, z: z10 };
-			const p11 = { x: x1, y: y1, z: z11 };
-			const p01 = { x: x0, y: y1, z: z01 };
-			addTri({
-				p: [p00, p10, p11],
-				fill: shadeTri(
-					p00.x,
-					p00.y,
-					p00.z,
-					p10.x,
-					p10.y,
-					p10.z,
-					p11.x,
-					p11.y,
-					p11.z,
-					wh,
-					liquid,
-				),
-			});
-			addTri({
-				p: [p00, p11, p01],
-				fill: shadeTri(
-					p00.x,
-					p00.y,
-					p00.z,
-					p11.x,
-					p11.y,
-					p11.z,
-					p01.x,
-					p01.y,
-					p01.z,
-					wh,
-					liquid,
-				),
-			});
-		}
-	}
-
-	tris.sort((a, b) => a.depth - b.depth);
-	for (const { tri } of tris) {
-		ctx.beginPath();
-		const a = toScreen(tri.p[0].x, tri.p[0].y, tri.p[0].z);
-		ctx.moveTo(a.sx, a.sy);
-		for (let k = 1; k < 3; k++) {
-			const p = toScreen(tri.p[k].x, tri.p[k].y, tri.p[k].z);
-			ctx.lineTo(p.sx, p.sy);
-		}
-		ctx.closePath();
-		ctx.fillStyle = tri.fill;
-		ctx.fill();
-	}
 
 	if (opts.showVelocityArrows) {
 		drawVelocityArrows(ctx, fluid, toScreen, scale, opts.arrowEvery ?? 3);
 	}
-
-	drawMeniscus(ctx, fluid, toScreen, wh);
-
-	ctx.lineWidth = 2;
-	ctx.strokeStyle = INK;
-	ctx.lineJoin = "round";
-	const rim = (ax: number, ay: number, bx: number, by: number) => {
-		const a = toScreen(ax, ay, wh);
-		const b = toScreen(bx, by, wh);
-		ctx.beginPath();
-		ctx.moveTo(a.sx, a.sy);
-		ctx.lineTo(b.sx, b.sy);
-		ctx.stroke();
-	};
-	rim(minX, minY, maxX, minY);
-	rim(maxX, minY, maxX, maxY);
-	rim(maxX, maxY, minX, maxY);
-	rim(minX, maxY, minX, minY);
-	ctx.lineWidth = 3;
-	rim(maxX, minY, maxX, maxY);
 
 	if (opts.showCom !== false) {
 		const com = fluid.centroidLocal();
@@ -337,44 +315,35 @@ export function drawTrunkIsometric(
 	}
 }
 
-function drawMeniscus(
+function drawMeniscusEdge(
 	ctx: CanvasRenderingContext2D,
 	fluid: FluidLayer,
-	toScreen: (x: number, y: number, z: number) => { sx: number; sy: number },
+	toScreen: TubProjector,
 	wh: number,
+	w: Wall,
 ) {
-	ctx.strokeStyle = "rgba(242, 255, 208, 0.85)";
-	ctx.lineWidth = 1.25;
-	const { minX, maxX, minY, maxY } = TRUNK_LOCAL;
 	const sample = (x: number, y: number) => {
 		const ci = Math.round((x - TRUNK_LOCAL.minX) / fluid.dx);
 		const cj = Math.round((y - TRUNK_LOCAL.minY) / fluid.dy);
 		return Math.min(wh, cornerHeight(fluid, ci, cj) + 0.008);
 	};
-	const edge = (ax: number, ay: number, bx: number, by: number) => {
-		const steps = 6;
-		ctx.beginPath();
-		for (let i = 0; i <= steps; i++) {
-			const t = i / steps;
-			const x = ax + (bx - ax) * t;
-			const y = ay + (by - ay) * t;
-			const z = sample(x, y);
-			const p = toScreen(x, y, z);
-			if (i === 0) ctx.moveTo(p.sx, p.sy);
-			else ctx.lineTo(p.sx, p.sy);
-		}
-		ctx.stroke();
-	};
-	edge(minX, minY, maxX, minY);
-	edge(maxX, minY, maxX, maxY);
-	edge(maxX, maxY, minX, maxY);
-	edge(minX, maxY, minX, minY);
+	const steps = 6;
+	ctx.beginPath();
+	for (let i = 0; i <= steps; i++) {
+		const t = i / steps;
+		const x = w.a.x + (w.b.x - w.a.x) * t;
+		const y = w.a.y + (w.b.y - w.a.y) * t;
+		const p = toScreen(x, y, sample(x, y));
+		if (i === 0) ctx.moveTo(p.sx, p.sy);
+		else ctx.lineTo(p.sx, p.sy);
+	}
+	ctx.stroke();
 }
 
 function drawVelocityArrows(
 	ctx: CanvasRenderingContext2D,
 	fluid: FluidLayer,
-	toScreen: (x: number, y: number, z: number) => { sx: number; sy: number },
+	toScreen: TubProjector,
 	scale: number,
 	every: number,
 ) {

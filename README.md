@@ -46,7 +46,7 @@ Each run is graded on how much cargo you deliver, from S down to D.
 
 ## How it looks: ink pipeline
 
-1. **Isometric art pass** (`src/render/Renderer.ts`) draws saturated shapes into an offscreen canvas using a 2:1 dimetric ground projection. Props get thick ink strokes and a cel highlight: the shape is filled in its shade color, clipped, then refilled in its base color shifted toward the sun. Drop shadows are hard-edged.
+1. **Isometric art pass** (`src/render/Renderer.ts`) draws the scene into an offscreen canvas in true isometric (30° ground axes, x/y/z foreshortened equally, fixed camera). The ground, road, puddles and skids lie on the ground plane. The truck, the open tub with its live liquid surface, rocks, cacti, barrels, tire stacks and finish flags are solids with height, back-face culled and painter-sorted. The sun sits to the viewer's upper left, so left faces are lit, right faces are in shade, and hard-edged shadows fall toward the lower right.
 2. **WebGL post-process** (`src/render/InkPost.ts`) runs one full-screen fragment shader:
    - Sobel edge detection on color for extra ink on strong silhouettes
    - Posterized brightness bands (cel shading) that keep hue
