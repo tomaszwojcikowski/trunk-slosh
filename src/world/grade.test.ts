@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import { rotate } from "../math/vec2";
 import { FluidLayer } from "../physics/FluidLayer";
 import { VehicleSimulation } from "../physics/VehicleSimulation";
-import { liquidBodyAccel, RAMP_HEIGHT } from "./grade";
+import { isoProject } from "../render/isoProject";
+import {
+	bankedHeight,
+	featureHeight,
+	hillScale,
+	liquidBodyAccel,
+	MAX_CANYON_GRADE,
+	profileGrade,
+	RAMP_HEIGHT,
+	WASH_DEPTH,
+} from "./grade";
 import { Track } from "./Track";
 
 function run(
@@ -16,6 +26,85 @@ function run(
 }
 
 describe("road grades", () => {
+	it("raises the inside of a bank and keeps a flat ribbon level", () => {
+		const half = 3.2;
+		expect(Math.abs(bankedHeight(0, 0, half))).toBeLessThan(0.01);
+		expect(Math.abs(bankedHeight(0, 0, -half))).toBeLessThan(0.01);
+		const bank = 0.04;
+		const centerZ = 1.5;
+		const inside = isoProject(0, half, bankedHeight(centerZ, bank, half));
+		const outside = isoProject(0, -half, bankedHeight(centerZ, bank, -half));
+		const flatInside = isoProject(0, half, centerZ);
+		const flatOutside = isoProject(0, -half, centerZ);
+		expect(flatInside.y - inside.y).toBeCloseTo(bank * half, 5);
+		expect(outside.y - flatOutside.y).toBeCloseTo(bank * half, 5);
+		expect(inside.y).toBeLessThan(flatInside.y);
+
+		const track = new Track(7, { archetype: "canyon" });
+		let best = 0;
+		let s = 0;
+		for (let u = 0; u < track.totalLength; u += 2) {
+			const b = track.bankAt(u);
+			if (Math.abs(b) > Math.abs(best)) {
+				best = b;
+				s = u;
+			}
+		}
+		expect(Math.abs(best)).toBeGreaterThan(0.01);
+		const frame = track.pointAt(s);
+		const edge = track.roadWidth / 2 - 0.7;
+		const sign = Math.sign(best);
+		const lateral = edge * sign;
+		const pin = {
+			x: frame.p.x + frame.n.x * lateral,
+			y: frame.p.y + frame.n.y * lateral,
+		};
+		const pout = {
+			x: frame.p.x - frame.n.x * lateral,
+			y: frame.p.y - frame.n.y * lateral,
+		};
+		const zc = track.heightAt(s);
+		const projectedIn = isoProject(
+			pin.x,
+			pin.y,
+			bankedHeight(zc, best, lateral),
+		);
+		const projectedOut = isoProject(
+			pout.x,
+			pout.y,
+			bankedHeight(zc, best, -lateral),
+		);
+		const flatIn = isoProject(pin.x, pin.y, zc);
+		const flatOut = isoProject(pout.x, pout.y, zc);
+		expect(flatIn.y - projectedIn.y).toBeCloseTo(Math.abs(best) * edge, 4);
+		expect(projectedOut.y - flatOut.y).toBeCloseTo(Math.abs(best) * edge, 4);
+	});
+
+	it("scales easy hills and leaves medium and hard on the current cap", () => {
+		expect(hillScale("easy")).toBe(0.55);
+		expect(hillScale("medium")).toBe(1);
+		expect(hillScale("hard")).toBe(1);
+		expect(profileGrade("canyon", 0, 1)).toBeCloseTo(MAX_CANYON_GRADE, 6);
+		expect(profileGrade("canyon", 0, hillScale("easy"))).toBeCloseTo(
+			MAX_CANYON_GRADE * 0.55,
+			6,
+		);
+		expect(profileGrade("canyon", 0, hillScale("hard"))).toBeLessThanOrEqual(
+			MAX_CANYON_GRADE + 1e-9,
+		);
+		const furniture = { rampS: 100, washS: 200 };
+		expect(featureHeight(100, furniture, 0.55)).toBeCloseTo(
+			RAMP_HEIGHT * 0.55,
+			5,
+		);
+		expect(featureHeight(200, furniture, 0.55)).toBeCloseTo(-WASH_DEPTH, 5);
+		for (const difficulty of ["easy", "hard"] as const) {
+			const track = new Track(3, { archetype: "flats", difficulty });
+			for (let s = 0; s <= track.totalLength; s += 8)
+				expect(Math.abs(track.heightAt(s))).toBeLessThan(0.01);
+		}
+	});
+
 	it("keeps flats within a centimeter of z = 0", () => {
 		const track = new Track(3, { archetype: "flats" });
 		expect(track.furniture).toBeNull();

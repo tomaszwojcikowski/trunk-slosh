@@ -1,3 +1,4 @@
+import type { HillDifficulty } from "../world/grade";
 import { REPLAY_VERSION, type ReplayRecording } from "./replay";
 import type { RunMode } from "./runConfig";
 
@@ -12,8 +13,15 @@ const KEY = "trunk-slosh-bests";
 
 type Store = Record<string, StoredBest>;
 
-function key(mode: RunMode, seed: number, daily: boolean): string {
-	return `${mode}:${daily ? "daily" : "seed"}:${seed}`;
+function key(
+	mode: RunMode,
+	seed: number,
+	daily: boolean,
+	difficulty: HillDifficulty = "medium",
+): string {
+	const base = `${mode}:${daily ? "daily" : "seed"}:${seed}`;
+	if (difficulty === "medium") return base;
+	return `${base}:${difficulty}`;
 }
 
 function load(): Store {
@@ -33,8 +41,9 @@ export function loadBest(
 	mode: RunMode,
 	seed: number,
 	daily: boolean,
+	difficulty: HillDifficulty = "medium",
 ): StoredBest | null {
-	return load()[key(mode, seed, daily)] ?? null;
+	return load()[key(mode, seed, daily, difficulty)] ?? null;
 }
 
 /** Time trial ranks by time. Other modes rank by cargo kept, then time. */
@@ -58,8 +67,9 @@ export function maybeSaveBest(
 	grade: string,
 	kept: number,
 	time: number,
+	difficulty: HillDifficulty = "medium",
 ): StoredBest | null {
-	const k = key(mode, seed, daily);
+	const k = key(mode, seed, daily, difficulty);
 	const store = load();
 	const prev = store[k];
 	if (!isBetterRun(mode, prev ?? null, { kept, time })) return null;
@@ -89,8 +99,9 @@ export function loadGhostRecording(
 	mode: RunMode,
 	seed: number,
 	daily: boolean,
+	difficulty: HillDifficulty = "medium",
 ): ReplayRecording | null {
-	const rec = loadGhosts()[key(mode, seed, daily)];
+	const rec = loadGhosts()[key(mode, seed, daily, difficulty)];
 	if (rec?.version !== REPLAY_VERSION || !Array.isArray(rec?.frames))
 		return null;
 	return rec;
@@ -101,10 +112,11 @@ export function saveGhostRecording(
 	seed: number,
 	daily: boolean,
 	recording: ReplayRecording,
+	difficulty: HillDifficulty = "medium",
 ) {
 	try {
 		const store = loadGhosts();
-		store[key(mode, seed, daily)] = recording;
+		store[key(mode, seed, daily, difficulty)] = recording;
 		localStorage.setItem(GHOST_KEY, JSON.stringify(store));
 	} catch {
 		// Quota or private mode: the best score still stands without a ghost.

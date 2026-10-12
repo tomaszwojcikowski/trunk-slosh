@@ -4,6 +4,7 @@ import {
 	type Furniture,
 	furnitureFor,
 	gradeAccel,
+	hillScale,
 	inWashAt,
 	liquidBodyAccel,
 	roadGrade,
@@ -249,12 +250,22 @@ export class Track {
 	}
 
 	heightAt(s: number): number {
-		return roadHeight(this.archetype, s, this.furniture);
+		return roadHeight(
+			this.archetype,
+			s,
+			this.furniture,
+			hillScale(this.difficulty),
+		);
 	}
 
 	/** dh/ds along the centerline, including a ramp or wash when one is under `s`. */
 	gradeAt(s: number): number {
-		return roadGrade(this.archetype, s, this.furniture);
+		return roadGrade(
+			this.archetype,
+			s,
+			this.furniture,
+			hillScale(this.difficulty),
+		);
 	}
 
 	/** Signed lateral slope. Positive banks a left turn so liquid goes outside. */

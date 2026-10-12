@@ -5,6 +5,8 @@ type Flags = {
 	spill?: boolean;
 	handbrake?: boolean;
 	turn?: boolean;
+	grade?: boolean;
+	jump?: boolean;
 	dismissed?: boolean;
 };
 
@@ -28,12 +30,21 @@ export function dismissTutorialsForever() {
 	save({ ...load(), dismissed: true });
 }
 
-export type TutorialHint = "welcome" | "spill" | "handbrake" | "turn" | null;
+export type TutorialHint =
+	| "welcome"
+	| "spill"
+	| "handbrake"
+	| "turn"
+	| "grade"
+	| "jump"
+	| null;
 
 export function nextTutorialHint(events: {
 	spilled: boolean;
 	handbrake: boolean;
 	highG: boolean;
+	onGrade: boolean;
+	airborne: boolean;
 	elapsed: number;
 }): TutorialHint {
 	if (!tutorialsEnabled()) return null;
@@ -58,6 +69,16 @@ export function nextTutorialHint(events: {
 		save(f);
 		return "turn";
 	}
+	if (events.onGrade && !f.grade) {
+		f.grade = true;
+		save(f);
+		return "grade";
+	}
+	if (events.airborne && !f.jump) {
+		f.jump = true;
+		save(f);
+		return "jump";
+	}
 	return null;
 }
 
@@ -70,5 +91,8 @@ export function tutorialMessage(h: TutorialHint): string {
 		return "Drift breaks traction; use it to rotate, not to haul cargo.";
 	if (h === "turn")
 		return "Hard turning shifts weight — slosh hits the outside wall first.";
+	if (h === "grade") return "A parked tub drains downhill. Creep the slope.";
+	if (h === "jump")
+		return "The landing hits through the impact thud. Keep the goo in the bed.";
 	return "";
 }

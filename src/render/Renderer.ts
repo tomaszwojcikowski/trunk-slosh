@@ -3,12 +3,15 @@ import type { FluidLayer } from "../physics/FluidLayer";
 import { type ParticlePool, SKID_LIFE, SPLAT_LIFE } from "../physics/Particles";
 import { TRUNK_LIP_HEIGHT } from "../physics/trunkConstants";
 import type { VehicleSnapshot } from "../physics/VehicleSimulation";
+import { CAR_SPEC } from "../physics/VehicleSimulation";
+import { bankedHeight, cosineBump, RAMP_HALF } from "../world/grade";
 import {
 	type Decor,
 	mulberry32,
 	type Obstacle,
 	type Track,
 } from "../world/Track";
+import { axleLayout, scaledBodyPoint } from "./axleLayout";
 import {
 	ISO_COS,
 	ISO_SIN,
@@ -256,15 +259,10 @@ export class Renderer {
 		);
 		ctx.fillStyle = C.shadow;
 		ctx.strokeStyle = C.shadow;
-		for (const o of obstacles) {
-			this.planeAt(o.z);
-			this.obstacleShadow(o);
-		}
+		for (const o of obstacles) this.obstacleShadow(f.track, o);
 		const flagZ = f.track.heightAt(f.track.finishS);
-		this.planeAt(flagZ);
 		this.flagShadows(f.track);
-		this.planeAt(f.car.z);
-		this.carShadow(f.car);
+		this.carShadow(f.track, f.car);
 		this.drawDropletShadows(f.particles);
 
 		const solids: Solid[] = obstacles.map((o) => ({
@@ -446,9 +444,18 @@ export class Renderer {
 
 	// ---------- Shadows (ground plane, meters) ----------
 
-	private hullShadow(points: Vec2[]) {
-		const hull = convexHull(points);
+	private groundZ(track: Track, x: number, y: number): number {
+		return track.heightAt(track.query({ x, y }).along);
+	}
+
+	private hullShadow(track: Track, points: Vec2[]) {
+		const lifted = points.map((p) =>
+			this.P(p.x, p.y, this.groundZ(track, p.x, p.y)),
+		);
+		const hull = convexHull(lifted);
+		this.screenSpace();
 		const ctx = this.ctx;
+		ctx.fillStyle = C.shadow;
 		ctx.beginPath();
 		hull.forEach((p, i) =>
 			i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
@@ -458,6 +465,7 @@ export class Renderer {
 	}
 
 	private columnShadow(
+		track: Track,
 		x: number,
 		y: number,
 		r: number,
@@ -467,51 +475,56 @@ export class Renderer {
 		const ctx = this.ctx;
 		const a = shadowOffset(z0);
 		const b = shadowOffset(z1);
-		ctx.lineWidth = r * 2;
+		const p0 = { x: x + a.x, y: y + a.y };
+		const p1 = { x: x + b.x, y: y + b.y };
+		const s0 = this.P(p0.x, p0.y, this.groundZ(track, p0.x, p0.y));
+		const s1 = this.P(p1.x, p1.y, this.groundZ(track, p1.x, p1.y));
+		this.screenSpace();
+		ctx.strokeStyle = C.shadow;
+		ctx.lineWidth = r * 2 * this.s;
 		ctx.lineCap = "round";
 		ctx.beginPath();
-		ctx.moveTo(x + a.x, y + a.y);
-		ctx.lineTo(x + b.x, y + b.y);
+		ctx.moveTo(s0.x, s0.y);
+		ctx.lineTo(s1.x, s1.y);
 		ctx.stroke();
 	}
 
-	private obstacleShadow(o: Obstacle) {
+	private obstacleShadow(track: Track, o: Obstacle) {
 		switch (o.kind) {
 			case "rock": {
 				const base = this.rockBase(o);
 				const h = this.rockHeight(o);
-				this.hullShadow([
+				this.hullShadow(track, [
 					...base,
 					...offset(shrink(base, 0.6), shadowOffset(h)),
 				]);
 				break;
 			}
 			case "cactus":
-				this.columnShadow(o.x, o.y, o.r, 0, 2.1);
+				this.columnShadow(track, o.x, o.y, o.r, 0, 2.1);
 				for (const arm of this.cactusArms(o))
-					this.columnShadow(arm.x, arm.y, arm.r, arm.z0, arm.z1);
+					this.columnShadow(track, arm.x, arm.y, arm.r, arm.z0, arm.z1);
 				break;
 			case "barrel":
-				this.columnShadow(o.x, o.y, o.r, 0, 0.95);
+				this.columnShadow(track, o.x, o.y, o.r, 0, 0.95);
 				break;
 			case "tires":
 				for (const t of this.tireStacks(o))
-					this.columnShadow(t.x, t.y, t.r, 0, t.count * 0.3);
+					this.columnShadow(track, t.x, t.y, t.r, 0, t.count * 0.3);
 				break;
 		}
 	}
 
-	private carShadow(car: VehicleSnapshot) {
+	private carShadow(track: Track, car: VehicleSnapshot) {
 		const toWorld = this.carToWorld(car);
-		const body = CAR_OUTLINE.map(toWorld);
+		const body = CAR_OUTLINE.map((p) =>
+			toWorld(scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b)),
+		);
 		const cab = shrink(CAB_OUTLINE, 0.9).map(toWorld);
-		const tires = [
-			{ x: 1.3, y: -1.02 },
-			{ x: 1.3, y: 1.02 },
-			{ x: -1.35, y: -1.04 },
-			{ x: -1.35, y: 1.04 },
-		].map(toWorld);
-		this.hullShadow([
+		const tires = axleLayout(CAR_SPEC.a, CAR_SPEC.b).map((w) =>
+			toWorld({ x: w.x, y: w.y + Math.sign(w.y) * 0.12 }),
+		);
+		this.hullShadow(track, [
 			...body,
 			...tires,
 			...offset(body, shadowOffset(HOOD_TOP)),
@@ -640,19 +653,19 @@ export class Renderer {
 		ctx.stroke();
 	}
 
-	private roadHeights(track: Track): number[] {
-		const z: number[] = [];
+	private roadSamples(track: Track): { z: number; along: number }[] {
+		const samples: { z: number; along: number }[] = [];
 		let along = 0;
 		const n = track.centerline.length;
 		for (let i = 0; i < n; i++) {
-			z.push(track.heightAt(along));
+			samples.push({ z: track.heightAt(along), along });
 			if (i < n - 1) {
 				const a = track.centerline[i];
 				const b = track.centerline[i + 1];
 				along += Math.hypot(b.x - a.x, b.y - a.y);
 			}
 		}
-		return z;
+		return samples;
 	}
 
 	private widen(center: Vec2, edge: Vec2, extra: number): Vec2 {
@@ -667,16 +680,31 @@ export class Renderer {
 		track: Track,
 		inView: (x: number, y: number, r: number, h?: number) => boolean,
 	) {
-		const z = this.roadHeights(track);
+		const samples = this.roadSamples(track);
+		const z = samples.map((s) => s.z);
 		const n = track.centerline.length;
 		const W = track.roadWidth;
+		const normals = samples.map((s) => track.pointAt(s.along).n);
+		const banks = samples.map((s) => track.bankAt(s.along));
+		const lateral = (i: number, edge: Vec2) => {
+			const c = track.centerline[i];
+			const normal = normals[i];
+			return (edge.x - c.x) * normal.x + (edge.y - c.y) * normal.y;
+		};
+		const zAt = (i: number, edge: Vec2) =>
+			bankedHeight(z[i], banks[i], lateral(i, edge));
 		const visible = (i: number) => {
 			const c = track.centerline[i];
 			return inView(c.x, c.y, W, 3);
 		};
 		this.screenSpace();
-		const band = (extra: number, color: string) => {
+		const band = (
+			extra: number,
+			color: string,
+			when?: (i: number) => boolean,
+		) => {
 			for (let i = 0; i < n - 1; i++) {
+				if (when && !when(i) && !when(i + 1)) continue;
 				if (!visible(i) && !visible(i + 1)) continue;
 				const c0 = track.centerline[i];
 				const c1 = track.centerline[i + 1];
@@ -686,10 +714,10 @@ export class Renderer {
 				const r1 = this.widen(c1, track.rightEdge[i + 1], extra);
 				this.fillScreenPoly(
 					[
-						this.P(l0.x, l0.y, z[i]),
-						this.P(r0.x, r0.y, z[i]),
-						this.P(r1.x, r1.y, z[i + 1]),
-						this.P(l1.x, l1.y, z[i + 1]),
+						this.P(l0.x, l0.y, zAt(i, l0)),
+						this.P(r0.x, r0.y, zAt(i, r0)),
+						this.P(r1.x, r1.y, zAt(i + 1, r1)),
+						this.P(l1.x, l1.y, zAt(i + 1, l1)),
 					],
 					color,
 					0,
@@ -699,6 +727,36 @@ export class Renderer {
 		band(0.7, INK);
 		band(0.35, C.shoulder);
 		band(0, C.asphalt);
+		const crease = (i: number) => {
+			const s = samples[i].along;
+			if (Math.abs(track.gradeAt(s)) > 0.045) return true;
+			const furniture = track.furniture;
+			return !!furniture && cosineBump(s, furniture.rampS, RAMP_HALF) > 0.55;
+		};
+		const inset = (center: Vec2, edge: Vec2) => ({
+			x: center.x + (edge.x - center.x) * 0.28,
+			y: center.y + (edge.y - center.y) * 0.28,
+		});
+		for (let i = 0; i < n - 1; i++) {
+			if (!crease(i) && !crease(i + 1)) continue;
+			if (!visible(i) && !visible(i + 1)) continue;
+			const c0 = track.centerline[i];
+			const c1 = track.centerline[i + 1];
+			const l0 = inset(c0, track.leftEdge[i]);
+			const r0 = inset(c0, track.rightEdge[i]);
+			const l1 = inset(c1, track.leftEdge[i + 1]);
+			const r1 = inset(c1, track.rightEdge[i + 1]);
+			this.fillScreenPoly(
+				[
+					this.P(l0.x, l0.y, zAt(i, l0)),
+					this.P(r0.x, r0.y, zAt(i, r0)),
+					this.P(r1.x, r1.y, zAt(i + 1, r1)),
+					this.P(l1.x, l1.y, zAt(i + 1, l1)),
+				],
+				"#4e4338",
+				0,
+			);
+		}
 
 		const ctx = this.ctx;
 		const chain = (
@@ -706,13 +764,14 @@ export class Renderer {
 			color: string,
 			width: number,
 			dash: number[],
+			zOf: (i: number) => number,
 		) => {
 			ctx.strokeStyle = color;
 			ctx.lineWidth = width;
 			ctx.setLineDash(dash);
 			ctx.beginPath();
 			for (let i = 0; i < n; i++) {
-				const p = this.P(pts[i].x, pts[i].y, z[i]);
+				const p = this.P(pts[i].x, pts[i].y, zOf(i));
 				if (i === 0) ctx.moveTo(p.x, p.y);
 				else ctx.lineTo(p.x, p.y);
 			}
@@ -720,9 +779,19 @@ export class Renderer {
 			ctx.setLineDash([]);
 		};
 		const edgeW = Math.max(1.5, 0.18 * this.s);
-		chain(track.leftEdge, C.edgeLine, edgeW, []);
-		chain(track.rightEdge, C.edgeLine, edgeW, []);
-		chain(track.centerline, C.centerLine, Math.max(2, 0.24 * this.s), [12, 16]);
+		chain(track.leftEdge, C.edgeLine, edgeW, [], (i) =>
+			zAt(i, track.leftEdge[i]),
+		);
+		chain(track.rightEdge, C.edgeLine, edgeW, [], (i) =>
+			zAt(i, track.rightEdge[i]),
+		);
+		chain(
+			track.centerline,
+			C.centerLine,
+			Math.max(2, 0.24 * this.s),
+			[12, 16],
+			(i) => z[i],
+		);
 
 		this.planeAt(track.heightAt(track.startS));
 		this.drawChecker(track.start, track.startAngle, W, 1);
@@ -1122,7 +1191,7 @@ export class Renderer {
 
 	private flagShadows(track: Track) {
 		for (const p of this.flagPositions(track))
-			this.columnShadow(p.x, p.y, 0.1, 0, 2.8);
+			this.columnShadow(track, p.x, p.y, 0.1, 0, 2.8);
 	}
 
 	private drawFlag(p: Vec2, angle: number, groundZ: number) {
@@ -1226,30 +1295,35 @@ export class Renderer {
 			return w.x + w.y;
 		};
 
-		const wheels = [
-			{ x: 1.3, y: -0.9, steer: car.steerAngle },
-			{ x: 1.3, y: 0.9, steer: car.steerAngle },
-			{ x: -1.35, y: -0.92, steer: 0 },
-			{ x: -1.35, y: 0.92, steer: 0 },
-		].sort((a, b) => depthAt(a.x, a.y) - depthAt(b.x, b.y));
+		const axles = axleLayout(CAR_SPEC.a, CAR_SPEC.b);
+		const wheels = axles
+			.map((w) => ({
+				x: w.x,
+				y: w.y,
+				steer: w.steer ? car.steerAngle : 0,
+			}))
+			.sort((a, b) => depthAt(a.x, a.y) - depthAt(b.x, b.y));
 		for (const w of wheels) this.drawTire(car, w.x, w.y, w.steer);
 
+		const body = CAR_OUTLINE.map((p) =>
+			scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b),
+		);
 		this.prism(
-			CAR_OUTLINE.map(toWorld),
+			body.map(toWorld),
 			car.z + BODY_BOTTOM,
 			car.z + BED_TOP,
 			bodyColors,
 			0.12,
 			1,
 			() => this.drawBedTop(car, light),
-			(i) => -CAR_OUTLINE[i].x * car.pitch,
+			(i) => -body[i].x * car.pitch,
 		);
 		const hood = [
 			{ x: 2.16, y: -0.58 },
 			{ x: 2.16, y: 0.58 },
 			{ x: 0.9, y: 0.74 },
 			{ x: 0.9, y: -0.74 },
-		];
+		].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
 		this.prism(
 			hood.map(toWorld),
 			car.z + BED_TOP,
@@ -1265,7 +1339,7 @@ export class Renderer {
 			{ x: 2.4, y: -0.64 },
 			{ x: 2.4, y: 0.64 },
 			{ x: 2.18, y: 0.7 },
-		];
+		].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
 		this.prism(
 			bumper.map(toWorld),
 			car.z + 0.22,
@@ -1282,7 +1356,7 @@ export class Renderer {
 				{ x: 2.24, y: y - 0.045 },
 				{ x: 2.24, y: y + 0.045 },
 				{ x: 2.14, y: y + 0.045 },
-			];
+			].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
 			this.prism(
 				bar.map(toWorld),
 				car.z + 0.5,
@@ -1295,8 +1369,13 @@ export class Renderer {
 			);
 		}
 		for (const side of [-1, 1]) {
-			const lamp = toWorld({ x: 2.18, y: side * 0.5 });
-			const nose = -2.18 * car.pitch;
+			const lampLocal = scaledBodyPoint(
+				{ x: 2.18, y: side * 0.5 },
+				CAR_SPEC.a,
+				CAR_SPEC.b,
+			);
+			const lamp = toWorld(lampLocal);
+			const nose = -lampLocal.x * car.pitch;
 			this.cylinder(
 				lamp.x,
 				lamp.y,
@@ -1310,8 +1389,13 @@ export class Renderer {
 				},
 				0.04,
 			);
-			const tail = toWorld({ x: -2.22, y: side * 0.55 });
-			const tailPitch = 2.22 * car.pitch;
+			const tailLocal = scaledBodyPoint(
+				{ x: -2.22, y: side * 0.55 },
+				CAR_SPEC.a,
+				CAR_SPEC.b,
+			);
+			const tail = toWorld(tailLocal);
+			const tailPitch = -tailLocal.x * car.pitch;
 			this.cylinder(
 				tail.x,
 				tail.y,
@@ -1632,11 +1716,25 @@ export class Renderer {
 		ctx.lineWidth = Math.max(1, 0.03 * this.s);
 		for (const d of drops) {
 			const r = Math.max(0.1, Math.min(0.22, Math.cbrt(d.volume) * 1.1));
-			const p = this.P(d.x, d.y, d.z);
+			const speed = Math.hypot(d.vx, d.vy, d.vz);
+			const streak = speed < 0.5 ? 0 : Math.min(0.22, speed / 120);
+			const head = this.P(d.x, d.y, d.z);
 			ctx.beginPath();
-			ctx.arc(p.x, p.y, r * this.s, 0, Math.PI * 2);
+			ctx.arc(head.x, head.y, r * this.s, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.stroke();
+			if (streak > 0) {
+				const tail = this.P(
+					d.x - (d.vx / speed) * streak,
+					d.y - (d.vy / speed) * streak,
+					d.z - (d.vz / speed) * streak,
+				);
+				ctx.beginPath();
+				ctx.moveTo(tail.x, tail.y);
+				ctx.lineTo(head.x, head.y);
+				ctx.lineWidth = Math.max(1.5, r * this.s * 0.65);
+				ctx.stroke();
+			}
 		}
 	}
 
@@ -1648,11 +1746,21 @@ export class Renderer {
 			const a = Math.max(0, p.life / p.maxLife);
 			const rise = (1 - a) * 0.8;
 			const c = this.P(p.x, p.y, p.z + p.r + rise);
+			ctx.fillStyle = `rgba(232, 204, 150, ${a * 0.85})`;
+			ctx.strokeStyle = `rgba(120, 88, 52, ${a})`;
 			ctx.beginPath();
 			ctx.arc(c.x, c.y, p.r * this.s, 0, Math.PI * 2);
-			ctx.fillStyle = `rgba(232, 204, 150, ${a * 0.85})`;
 			ctx.fill();
-			ctx.strokeStyle = `rgba(120, 88, 52, ${a})`;
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.arc(
+				c.x + p.r * this.s * 0.55,
+				c.y - p.r * this.s * 0.28,
+				p.r * this.s * 0.62,
+				0,
+				Math.PI * 2,
+			);
+			ctx.fill();
 			ctx.stroke();
 		}
 	}

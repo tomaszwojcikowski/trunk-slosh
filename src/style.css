@@ -200,6 +200,7 @@ body,
 
 .stats {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 12px;
 	justify-content: flex-end;
 	font-size: 13px;

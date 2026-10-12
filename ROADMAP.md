@@ -227,20 +227,13 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–12 are shipped on this line (v0.12.0). Phase 15’s layered mix and impact thud are in; the lip accent is still open.
+Phases 0–20 are shipped on this line (v0.21.0).
 
-The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank, and a short ramp can leave the ground. The HUD has a slosh meter and a next-bend chevron. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a hard hit plays an impact thud.
+The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a short truck draws the short axles. A hard hit plays an impact thud.
 
-The models pass and this line are one tree. The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. A sidewall mark advances with `wheelAngle`. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, a continuous slosh bed, tire scrub that is updated every step, and the impact thud.
+The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
 
-What the next phases are still for:
-
-- Banking moves the liquid. The ribbon stays level across its width. Boulder steps and the ramp read only as a slow rise. Shadows are a flat offset on the local ground plane.
-- The ink pass is still one fragment shader: Sobel, five cel bands, world-anchored hatch, animated grain, vignette. Grain makes a full-frame hash noisy. The Phase 7 check is geometric (the truck stays in the lower half).
-- Thick, water, and volatile cargo share the slosh bed. Only the tub color changes. There is no separate lip accent on top of that bed.
-- Droplets and dust puffs are circles. `?review=juice` holds both on screen.
-
-Phases 17–20 are the skill reads after that picture and mix. The short wheelbase already yaws faster, and the drawing still uses the pickup axles. The HUD names speed, G, cargo, and slosh. Grade and a jump are unnamed. Easy and hard share the medium hill. Bests and ghosts are keyed by mode and seed only, so a hard run and an easy run on the same seed share one record. In the air the engine still takes throttle and the road still rumbles.
+The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Rumble goes quiet in the air and the engine drops the throttle term. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
 
 ---
 
@@ -446,9 +439,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] Cross-slope the road quad by `bankAt`. Flats and any segment with bank 0 stay level across the width.
-- [ ] A darker band or a crease along a boulder rise and along the ramp crown, using the height profile that is already there.
-- [ ] Cast contact shadows on the local ground height. A shadow does not drop onto a neighboring segment’s z.
+- [x] Cross-slope the road quad by `bankAt`. Flats and any segment with bank 0 stay level across the width.
+- [x] A darker band or a crease along a boulder rise and along the ramp crown, using the height profile that is already there.
+- [x] Cast contact shadows on the local ground height. A shadow does not drop onto a neighboring segment’s z.
 
 **Acceptance criteria**
 
@@ -478,9 +471,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] One grain uniform. At 0 the paper grain is a constant. The default stays the current animated grain.
-- [ ] `?review=juice` and a paused `?demo=` hold can request grain 0 without a second shader.
-- [ ] Keep the lit liquid color distinct enough that the five cel bands do not fold it into the mid green. The liquid hatch mask still keeps deep-tub hue.
+- [x] One grain uniform. At 0 the paper grain is a constant. The default stays the current animated grain.
+- [x] `?review=juice` and a paused `?demo=` hold can request grain 0 without a second shader.
+- [x] Keep the lit liquid color distinct enough that the five cel bands do not fold it into the mid green. The liquid hatch mask still keeps deep-tub hue.
 
 **Acceptance criteria**
 
@@ -513,7 +506,7 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 - [x] Bring the layered bus across: `engineFreqFor`, `engineGainFor`, `rollGainFor`, `sloshGainFor`. The body layer uses a fixed fraction of the engine gain when the engine is audible, and 0 when it is parked.
 - [x] Call `tireScrub`, `surfaceRoll`, and the slosh bed every step. Scrub gain is 0 when the amount is below 0.2.
-- [ ] Continuous slosh from `sloshSpeed`, silent under the calm threshold (0.08). Add a short lip accent only when the HUD band is “lip” or a spill starts. Calm frames start no one-shot.
+- [x] Continuous slosh from `sloshSpeed`, silent under the calm threshold (0.08). Add a short lip accent only when the HUD band is “lip” or a spill starts. Calm frames start no one-shot.
 - [x] Keep `impactThud` and `impactGainFor`. The cooldown still collapses two hits into one.
 
 **Acceptance criteria**
@@ -544,9 +537,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] A pure function from cargo preset to slosh-filter cutoff (and, if useful, splash brightness). Water is the current bed. Thick is lower. Volatile is higher. Viscosity and `colorShift` stay on the preset data that already exists.
-- [ ] Draw each droplet as a teardrop or a short streak along its flight. Keep the volume-based size.
-- [ ] Draw each puff as two overlapping lobes. The `?review=juice` pause still catches both a droplet and a puff.
+- [x] A pure function from cargo preset to slosh-filter cutoff (and, if useful, splash brightness). Water is the current bed. Thick is lower. Volatile is higher. Viscosity and `colorShift` stay on the preset data that already exists.
+- [x] Draw each droplet as a teardrop or a short streak along its flight. Keep the volume-based size.
+- [x] Draw each puff as two overlapping lobes. The `?review=juice` pause still catches both a droplet and a puff.
 
 **Acceptance criteria**
 
@@ -575,9 +568,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] A pure function from the axle distances to the four wheel positions and a body length. Pickup distances stay the current 1.3 m / 1.35 m.
-- [ ] The renderer uses that function for the tires, the bumper, and the nose and tail of the body. The cab and the tub opening stay put.
-- [ ] A short ghost is drawn with the short axles.
+- [x] A pure function from the axle distances to the four wheel positions and a body length. Pickup distances stay the current 1.3 m / 1.35 m.
+- [x] The renderer uses that function for the tires, the bumper, and the nose and tail of the body. The cab and the tub opening stay put.
+- [x] A short ghost is drawn with the short axles.
 
 **Acceptance criteria**
 
@@ -606,10 +599,10 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] `gradeLabel` and `airborneLabel` as pure functions. A grade under a small threshold reads as level.
-- [ ] HUD slots for those two reads. Reduced motion leaves them visible.
-- [ ] Two tutorial hints, stored with the existing dismiss-forever flags. The grade hint says a parked tub drains downhill. The jump hint says the landing comes through the impact thud.
-- [ ] `RunStats` accumulates airborne time, and the results sentence includes it.
+- [x] `gradeLabel` and `airborneLabel` as pure functions. A grade under a small threshold reads as level.
+- [x] HUD slots for those two reads. Reduced motion leaves them visible.
+- [x] Two tutorial hints, stored with the existing dismiss-forever flags. The grade hint says a parked tub drains downhill. The jump hint says the landing comes through the impact thud.
+- [x] `RunStats` accumulates airborne time, and the results sentence includes it.
 
 **Acceptance criteria**
 
@@ -638,9 +631,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] A difficulty scale on canyon amplitude, boulder rise, and ramp height. Medium is 1. Hard is 1. Easy is lower. The steepest hard grade stays at or under `MAX_CANYON_GRADE`.
-- [ ] Flats stay within a centimeter of z = 0 at every difficulty.
-- [ ] Bests and ghosts gain difficulty in the storage key. The old key, which is mode and seed only, remains the medium record.
+- [x] A difficulty scale on canyon amplitude, boulder rise, and ramp height. Medium is 1. Hard is 1. Easy is lower. The steepest hard grade stays at or under `MAX_CANYON_GRADE`.
+- [x] Flats stay within a centimeter of z = 0 at every difficulty.
+- [x] Bests and ghosts gain difficulty in the storage key. The old key, which is mode and seed only, remains the medium record.
 
 **Acceptance criteria**
 
@@ -669,9 +662,9 @@ Phases 17–20 are the skill reads after that picture and mix. The short wheelba
 
 **Deliverables**
 
-- [ ] `airborneMix` returns zero roll and a throttle-less engine gain while airborne, and returns the inputs unchanged while grounded.
-- [ ] The game passes `airborne` into that mix every step, including the landing frame.
-- [ ] This phase does not add the lip accent. That stays the open deliverable on Phase 15.
+- [x] `airborneMix` returns zero roll and a throttle-less engine gain while airborne, and returns the inputs unchanged while grounded.
+- [x] The game passes `airborne` into that mix every step, including the landing frame.
+- [x] This phase does not add the lip accent. The lip accent is the Phase 15 deliverable.
 
 **Acceptance criteria**
 
@@ -705,7 +698,7 @@ Items that do not block a single phase but should be picked up when touching nea
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–12 are done. Phase 15 is partly in from the models merge (layered bus, rumble, thud). New work starts at Phase 13. Phases 17–20 follow Phase 16.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–20 are done. New work starts after Phase 20.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
