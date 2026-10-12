@@ -8,6 +8,13 @@ import {
 	type Obstacle,
 	type Track,
 } from "../world/Track";
+import {
+	ISO_COS,
+	ISO_SIN,
+	isoCameraPixelOffset,
+	isoGroundTransform,
+	isoWorldToScreen,
+} from "./isoProject";
 import { shiftHex } from "./liquidColor";
 import { drawTrunkIsometric } from "./trunkMeshDraw";
 
@@ -128,7 +135,7 @@ function roundRectPath(
 
 const rgb = (c: number[], a = 1) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
 
-/** Draws the flat, outlined comic scene into an offscreen canvas; the ink shader finishes it. */
+/** Draws the isometric, outlined comic scene into an offscreen canvas; the ink shader finishes it. */
 export class Renderer {
 	readonly canvas: HTMLCanvasElement;
 	private readonly ctx: CanvasRenderingContext2D;
@@ -168,32 +175,33 @@ export class Renderer {
 		return camera.zoom * this.pixelRatio;
 	}
 
+	hatchOffset(camera: Camera): { x: number; y: number } {
+		return isoCameraPixelOffset(camera, this.scale(camera));
+	}
+
 	draw(f: RenderFrame) {
 		const { ctx, canvas } = this;
 		const W = canvas.width;
 		const H = canvas.height;
 		const s = this.scale(f.camera);
 		const cam = f.camera;
+		const view = isoGroundTransform(cam, s, W, H);
 
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.fillStyle = C.sand;
 		ctx.fillRect(0, 0, W, H);
-		ctx.setTransform(s, 0, 0, s, W / 2 - cam.x * s, H / 2 - cam.y * s);
-		if (cam.roll) {
-			ctx.translate(cam.x, cam.y);
-			ctx.rotate(cam.roll);
-			ctx.translate(-cam.x, -cam.y);
-		}
+		ctx.setTransform(view.a, view.b, view.c, view.d, view.e, view.f);
 		ctx.lineJoin = "round";
 		ctx.lineCap = "round";
 
-		const hw = W / (2 * s) + 3;
-		const hh = H / (2 * s) + 3;
+		// Isometric projection makes the viewport a diamond in world space.
+		// A conservative square keeps edge props from popping near the corners.
+		const reach = W / (2 * s * ISO_COS) + H / (2 * s * ISO_SIN) + 8;
 		const inView = (x: number, y: number, r: number) =>
-			x + r > cam.x - hw &&
-			x - r < cam.x + hw &&
-			y + r > cam.y - hh &&
-			y - r < cam.y + hh;
+			x + r > cam.x - reach &&
+			x - r < cam.x + reach &&
+			y + r > cam.y - reach &&
+			y - r < cam.y + reach;
 
 		this.drawGround(f.track, inView);
 		this.drawRoad(f.track);
@@ -948,8 +956,9 @@ export class Renderer {
 		for (const p of particles.popups) {
 			const maxLife = p.big ? 1.4 : 1.0;
 			const t = 1 - p.life / maxLife;
-			const x = (p.x - cam.x) * s + W / 2;
-			const y = (p.y - cam.y) * s + H / 2 - t * 46 * pr;
+			const screen = isoWorldToScreen(p.x, p.y, 0, cam, s, W, H);
+			const x = screen.x;
+			const y = screen.y - t * 46 * pr;
 			const size = (p.big ? 40 : 26) * pr * (t < 0.12 ? 0.6 + t * 3.3 : 1);
 			ctx.save();
 			ctx.translate(x, y);

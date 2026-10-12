@@ -18,7 +18,7 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 | **Vehicle** | Matter.js body + bicycle model, Pacejka-lite tires, load transfer, sand grip, collisions |
 | **Liquid** | MAC shallow-water grid in tub frame, mass conservation, weir spills, chassis coupling |
 | **Spills** | Ballistic droplets, ground puddles, popups, skids, dust puffs |
-| **Render** | 2D art pass + WebGL ink post (edges, cel bands, world hatching, grain); 2D fallback |
+| **Render** | Isometric art pass + WebGL ink post (edges, cel bands, world hatching, grain); 2D fallback |
 | **Perf** | 120 Hz fixed step, mobile resolution budget, `?demo` autopilot |
 | **Quality** | Vitest (fluid, vehicle, track, particles, skill vs. spill), GitHub Actions CI + Pages |
 

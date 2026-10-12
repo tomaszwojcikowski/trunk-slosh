@@ -1014,13 +1014,13 @@ export class Game {
 			debug: this.debug,
 		});
 
-		const s = this.renderer.scale(cam);
 		const pr = this.renderer.canvas.width / Math.max(1, this.wrap.clientWidth);
 		const hatch = 5 * pr;
 		const period = hatch * HATCH_PERIOD;
 		const wrapMod = (v: number) => ((v % period) + period) % period;
+		const hatchOffset = this.renderer.hatchOffset(cam);
 		this.presenter.present(this.renderer.canvas, {
-			worldOffset: [wrapMod(cam.x * s), wrapMod(cam.y * s)],
+			worldOffset: [wrapMod(hatchOffset.x), wrapMod(hatchOffset.y)],
 			inkWidth: Math.max(1, pr),
 			hatchSpacing: hatch,
 			time: this.clock,
