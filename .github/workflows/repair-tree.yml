@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Materialize og.png when every part is present
+      - name: Materialize og.png
         run: |
           python3 << 'PY'
           import base64, hashlib
@@ -20,6 +20,10 @@ jobs:
           if not all(p.exists() for p in parts):
               print("parts incomplete")
               raise SystemExit(0)
+          text0 = parts[0].read_text()
+          if text0.count("hCfA") != 1:
+              raise SystemExit("part0 marker missing")
+          parts[0].write_text(text0.replace("hCfA", "hMfA", 1))
           b64 = "".join(p.read_text().strip() for p in parts)
           raw = base64.b64decode(b64)
           digest = hashlib.sha256(raw).hexdigest()
