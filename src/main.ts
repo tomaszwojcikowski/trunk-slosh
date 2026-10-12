@@ -5,7 +5,7 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 
 app.innerHTML = `
   <div id="game-wrap">
-    <canvas id="game" aria-label="Top-down view of the car and road"></canvas>
+    <canvas id="game" aria-label="Isometric view of the car and road"></canvas>
 
     <div class="hud">
       <section class="panel panel-cargo" aria-label="Cargo">

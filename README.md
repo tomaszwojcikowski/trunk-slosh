@@ -1,6 +1,6 @@
 # Trunk Slosh
 
-A top-down driving game with a comic-book, Borderlands-style look. You haul an open tub of toxic goo across a procedurally generated desert. Corner too hard, brake too late or clip a rock, and the liquid sloshes over the lip onto the road.
+An isometric driving game with a comic-book, Borderlands-style look. You haul an open tub of toxic goo across a procedurally generated desert. Corner too hard, brake too late or clip a rock, and the liquid sloshes over the lip onto the road.
 
 **Live demo (GitHub Pages):** https://tomaszwojcikowski.github.io/trunk-slosh/ (after CI deploy; see [.github/DEPLOY.md](.github/DEPLOY.md))
 
@@ -46,13 +46,13 @@ Each run is graded on how much cargo you deliver, from S down to D.
 
 ## How it looks: ink pipeline
 
-1. **2D art pass** (`src/render/Renderer.ts`) draws flat, saturated shapes into an offscreen canvas. Props get thick ink strokes and a cel highlight: the shape is filled in its shade color, clipped, then refilled in its base color shifted toward the sun. Drop shadows are hard-edged.
+1. **Isometric art pass** (`src/render/Renderer.ts`) draws saturated shapes into an offscreen canvas using a 2:1 dimetric ground projection. Props get thick ink strokes and a cel highlight: the shape is filled in its shade color, clipped, then refilled in its base color shifted toward the sun. Drop shadows are hard-edged.
 2. **WebGL post-process** (`src/render/InkPost.ts`) runs one full-screen fragment shader:
    - Sobel edge detection on color for extra ink on strong silhouettes
    - Posterized brightness bands (cel shading) that keep hue
    - Three levels of **world-anchored crosshatching** in dark areas (drop shadows, tires), so hatching stays fixed to the ground instead of swimming across the screen
    - Paper grain and a warm vignette
-3. If WebGL is unavailable, the scene is shown flat through a 2D fallback.
+3. If WebGL is unavailable, the isometric scene is shown directly through a 2D canvas fallback.
 
 Render resolution adapts to the device (capped at about 1.6 megapixels on touch devices) to stay smooth on phones.
 
