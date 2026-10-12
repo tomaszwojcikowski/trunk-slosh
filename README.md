@@ -24,15 +24,23 @@ Dev server: http://127.0.0.1:49217. Append `?demo` for an autopilot attract mode
 | `Space` | Handbrake |
 | `R` / `N` | Restart / new track |
 | `P` | Pause (window blur also pauses) |
-| `,` | Settings (ink, SFX, motion, quality, touch/keyboard ramp, export replay) |
+| `,` | Settings (ink, SFX, motion, quality, touch/keyboard ramp, export replay, custom goo) |
 | `H` | Toggle the ink shader (compare with the flat render) |
 | `I` | Toggle the isometric **tub 3D** panel (flow arrows + slosh mesh); click the panel to enlarge, `Esc` to close |
 | `` ` `` | Debug vectors (velocity, acceleration, liquid center of mass) |
 | Touch | Left pad steers, right pad is gas/brake, **Drift** is the handbrake |
 
-On the intro screen you can pick **Practice**, **Contract**, or **Time trial**, set **cargo** and **vehicle** presets, **difficulty**, and **Today’s seed** (UTC daily). Results show spill volume, off-road time, peak slosh, and hardest G; bests are stored in `localStorage`.
+On the intro screen you can pick **Practice**, **Contract**, or **Time trial**, set **cargo** and **vehicle** presets, **difficulty**, **route** (flats, canyon, boulder field, or from the seed), and **Today’s seed** (UTC daily). The seed is on the intro card, the HUD, and the results card. Results also show spill volume, off-road time, peak slosh, and hardest G. Bests live in `localStorage`: practice and contract keep the fuller tank, time trial keeps the faster finish. A new best also stores a ghost. The next run on that same seed draws it as a translucent car.
 
-**URL flags** (share read-only links): `?seed=12345`, `?daily=1`, `?mode=contract|practice|timetrial`, `?difficulty=easy|medium|hard`, `?cargo=water|thick|volatile`, `?vehicle=pickup|short`, `?worker=1` (experimental fluid worker; sync sim stays default for replay determinism).
+Sound starts on the first key or tap (browser autoplay rules). The engine is a continuous tone; tire scrub, slosh, and spills are short one-shots. Turn it off under Settings → Sound effects. **Clear saved data** in Settings removes bests, ghosts, achievements, custom goo, and tutorial history. Sound and display settings stay. Hints can show again after a clear.
+
+**Share card** on the results screen saves a PNG (or the system share sheet) with the grade, seed, and a QR code that opens the same run. **Copy score post** copies a short result and opens [GitHub Discussions](https://github.com/tomaszwojcikowski/trunk-slosh/discussions) so a daily score can be posted by hand. Nothing is uploaded by the game. Enable Discussions on the repo if that page is still off.
+
+**Achievements** (local only): first S rank, a zero-spill finish, a hard or boulder route, a fulfilled contract, and a daily delivery. They show in Settings.
+
+**Custom goo:** Settings → Export goo JSON, edit `active` (`viscosityMul`, `pseudoMul`, `density`, `fillDepth`, `wallHeight`), then Import. The file also includes the tub box and the built-in cargos. `?goo=1` turns the saved goo on. Ghosts stay off while custom goo is active so a tuned liquid is not raced against a water replay.
+
+**URL flags** (share read-only links): `?seed=12345`, `?daily=1`, `?mode=contract|practice|timetrial`, `?difficulty=easy|medium|hard`, `?archetype=flats|canyon|boulder`, `?cargo=water|thick|volatile`, `?vehicle=pickup|short`, `?goo=1`, `?worker=1` (fluid step one frame behind on a worker; sync sim stays default so replays match). Thick cargo is olive and volatile cargo is brighter green; water stays the default toxic green.
 
 Each run is graded on how much cargo you deliver, from S down to D.
 
