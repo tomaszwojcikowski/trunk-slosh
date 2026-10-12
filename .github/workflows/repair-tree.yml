@@ -11,44 +11,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Match local v0.7.1 bytes
+      - name: Write social preview from text payload
         run: |
           python3 << 'PY'
           import base64, hashlib
           from pathlib import Path
-
-          lock = Path("package-lock.json")
-          text = lock.read_text()
-          old1 = "sha512-oF9fZu3vTWnTiVAkDFxU9PJLt1nh20K9RRvvh3Q7r5U7l7L7XookBbDBVLojCVSLGbvtSlxeUNnjAj6DbNsKyzbg=="
-          new1 = "sha512-oF9fZu3vTWnTiVAkDFxU9PJLt1nh20K9RRpuHsR7ZnE2L7XookBbDBVLojCVSLGbvtSlxeUNnjAj6DbNsKyzbg=="
-          if old1 not in text:
-              raise SystemExit("missing rolldown integrity")
-          text = text.replace(old1, new1, 1)
-          new2 = "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA=="
-          marker = '"node_modules/@types/chai"'
-          i = text.find(marker)
-          j = text.find('"integrity":', i)
-          line_end = text.find("\n", j)
-          text = text[:j] + '"integrity": "' + new2 + '",' + text[line_end:]
-          lock.write_text(text)
-          digest = hashlib.sha256(lock.read_bytes()).hexdigest()
-          expected = "4ba150c42a5dd382d53521f9c5b41d2e45c1ea8148f7f011e8fccb822dbe6614"
-          if digest != expected:
-              raise SystemExit(f"lock digest {digest}")
-
           b64_path = Path("public/og.png.b64")
-          if b64_path.exists():
-              raw = base64.b64decode(b64_path.read_text().strip())
-              png_digest = hashlib.sha256(raw).hexdigest()
-              png_expected = "c6b626831cff458db66d6bfe0713f10cc381448a043280b6f96910d6bb412f33"
-              if png_digest != png_expected or len(raw) != 26010:
-                  raise SystemExit(f"png digest {png_digest} len {len(raw)}")
-              Path("public/og.png").write_bytes(raw)
+          if not b64_path.exists():
+              raise SystemExit(0)
+          raw = base64.b64decode(b64_path.read_text().strip())
+          png_digest = hashlib.sha256(raw).hexdigest()
+          png_expected = "c6b626831cff458db66d6bfe0713f10cc381448a043280b6f96910d6bb412f33"
+          if png_digest != png_expected or len(raw) != 26010 or raw[:8] != bytes.fromhex("89504e470d0a1a0a"):
+              raise SystemExit(f"png digest {png_digest} len {len(raw)}")
+          Path("public/og.png").write_bytes(raw)
           PY
+          if [ ! -f public/og.png ]; then
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          if [ -f public/og.png ]; then git add public/og.png; fi
-          git rm -f public/_binprobe.bin public/og.png.b64 .github/workflows/repair-tree.yml
-          git commit -m "fix: match lockfile and social preview bytes"
+          git add public/og.png
+          git rm -f public/og.png.b64
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: add public/og.png social preview"
           git push origin HEAD:main
