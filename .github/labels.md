@@ -15,6 +15,11 @@ Create these in **Settings → Labels** (colors are suggestions):
 | `phase-9` | Next-bend read, slosh meter, gamepad |
 | `phase-10` | Banking, ramps, dry washes |
 | `phase-11` | Wheel spin, body pitch, impact thud |
+| `phase-12` | Pickup, props, and the layered mix on the graded truck |
+| `phase-13` | Visible bank, grade crease, contact shadows |
+| `phase-14` | Ink grain freeze and a liquid specular that survives cel |
+| `phase-15` | One mix: layers, decaying scrub, thud, lip accent |
+| `phase-16` | Cargo voice and a spill that reads as liquid |
 | `bug` | Incorrect behavior |
 | `feature` | New player-facing capability |
 | `physics/rendering` | Simulation or graphics pipeline |
