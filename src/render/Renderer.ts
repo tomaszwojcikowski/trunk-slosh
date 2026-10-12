@@ -77,8 +77,9 @@ const C = {
 /** Height of the truck bed / tub lip above the road (m). */
 const BED_TOP = TRUNK_LIP_HEIGHT;
 const BODY_BOTTOM = 0.4;
-const CAB_TOP = 1.6;
-const WHEEL_TOP = 0.72;
+const CAB_TOP = 1.62;
+const HOOD_TOP = BED_TOP + 0.16;
+const RAIL_TOP = BED_TOP + 0.22;
 
 const CAR_OUTLINE: Vec2[] = [
 	{ x: 2.25, y: -0.5 },
@@ -499,9 +500,16 @@ export class Renderer {
 		const toWorld = this.carToWorld(car);
 		const body = CAR_OUTLINE.map(toWorld);
 		const cab = shrink(CAB_OUTLINE, 0.9).map(toWorld);
+		const tires = [
+			{ x: 1.3, y: -1.02 },
+			{ x: 1.3, y: 1.02 },
+			{ x: -1.35, y: -1.04 },
+			{ x: -1.35, y: 1.04 },
+		].map(toWorld);
 		this.hullShadow([
 			...body,
-			...offset(body, shadowOffset(BED_TOP)),
+			...tires,
+			...offset(body, shadowOffset(HOOD_TOP)),
 			...offset(cab, shadowOffset(CAB_TOP)),
 		]);
 	}
@@ -815,16 +823,32 @@ export class Renderer {
 
 	private drawObstacle(o: Obstacle) {
 		switch (o.kind) {
-			case "rock":
+			case "rock": {
+				const base = this.rockBase(o);
+				const h = this.rockHeight(o);
+				const colors = { top: C.rock, lit: C.rock, shade: C.rockShade };
+				this.prism(base, 0, h * 0.62, colors, 0.09, 1.08);
 				this.prism(
-					this.rockBase(o),
-					0,
-					this.rockHeight(o),
-					{ top: C.rockTop, lit: C.rock, shade: C.rockShade },
-					0.11,
-					0.6,
+					shrink(base, 0.78),
+					h * 0.4,
+					h,
+					{ ...colors, top: C.rockTop },
+					0.08,
+					0.55,
+					() => {
+						const ctx = this.ctx;
+						const c = centroid(base);
+						const tip = o.shape[0];
+						ctx.strokeStyle = INK;
+						ctx.lineWidth = 0.05;
+						ctx.beginPath();
+						ctx.moveTo(c.x - tip.x * 0.15, c.y - tip.y * 0.15);
+						ctx.lineTo(c.x + tip.x * 0.45, c.y + tip.y * 0.45);
+						ctx.stroke();
+					},
 				);
 				break;
+			}
 			case "cactus":
 				this.drawCactus(o);
 				break;
@@ -877,6 +901,16 @@ export class Renderer {
 					ctx.lineTo(t.x + k * rx, t.y + sag);
 				}
 				ctx.stroke();
+				ctx.strokeStyle = "rgba(27, 18, 11, 0.85)";
+				ctx.lineWidth = 0.02 * this.s;
+				for (let k = 0; k < 5; k++) {
+					const p = this.P(o.x, o.y, 0.35 + k * 0.32);
+					const dir = k % 2 === 0 ? 1 : -1;
+					ctx.beginPath();
+					ctx.moveTo(p.x, p.y);
+					ctx.lineTo(p.x + dir * rx * 0.7, p.y - 3);
+					ctx.stroke();
+				}
 				if (o.rot < 1.2) {
 					ctx.beginPath();
 					ctx.arc(t.x, t.y, o.r * 0.32 * this.s, 0, Math.PI * 2);
@@ -900,9 +934,18 @@ export class Renderer {
 			o.y,
 			o.r,
 			0,
-			h,
+			h - 0.08,
 			{ top: C.barrel, lit: C.barrel, shade: C.barrelShade },
 			0.1,
+		);
+		this.cylinder(
+			o.x,
+			o.y,
+			o.r * 1.08,
+			h - 0.08,
+			h,
+			{ top: "#e25848", lit: C.barrel, shade: C.barrelShade },
+			0.06,
 		);
 		ctx.lineWidth = 0.09 * this.s;
 		ctx.strokeStyle = C.barrelBand;
@@ -959,6 +1002,15 @@ export class Renderer {
 			ctx.strokeStyle = INK;
 			ctx.stroke();
 			this.screenSpace();
+			this.cylinder(
+				t.x,
+				t.y,
+				t.r * 0.22,
+				topZ,
+				topZ + 0.05,
+				{ top: "#d9d3c7", lit: "#9a9a9a", shade: "#555" },
+				0.04,
+			);
 		}
 	}
 
@@ -1005,15 +1057,27 @@ export class Renderer {
 		ctx.strokeStyle = "#d8d2c4";
 		ctx.lineWidth = 0.07 * s;
 		ctx.stroke();
+		const tip = this.P(p.x, p.y, poleTop);
+		ctx.beginPath();
+		ctx.arc(tip.x, tip.y, 0.09 * s, 0, Math.PI * 2);
+		ctx.fillStyle = "#c9c1b5";
+		ctx.fill();
+		ctx.lineWidth = 0.05 * s;
+		ctx.strokeStyle = INK;
+		ctx.stroke();
 		const back = { x: -Math.cos(angle) * 1.5, y: -Math.sin(angle) * 1.5 };
+		const hoistTop = this.P(p.x, p.y, poleTop - 0.06);
+		const hoistBot = this.P(p.x, p.y, poleTop - 0.86);
+		const fly = this.P(p.x + back.x, p.y + back.y, poleTop - 0.42);
+		this.fillScreenPoly([hoistTop, fly, hoistBot], "#ef4b33", 0.07 * s);
 		this.fillScreenPoly(
 			[
-				this.P(p.x, p.y, poleTop - 0.05),
-				this.P(p.x + back.x, p.y + back.y, poleTop - 0.4),
-				this.P(p.x, p.y, poleTop - 0.8),
+				hoistTop,
+				this.P(p.x + back.x * 0.55, p.y + back.y * 0.55, poleTop - 0.28),
+				this.P(p.x, p.y, poleTop - 0.3),
 			],
-			"#ef4b33",
-			0.08 * s,
+			"#f7ecd2",
+			0,
 		);
 	}
 
@@ -1059,126 +1123,218 @@ export class Renderer {
 		const toWorld = this.carToWorld(car);
 		const light = rotate(SUN_2D, -car.angle);
 		const toward = rotate({ x: 1, y: 1 }, -car.angle);
-		const wheelColors = { top: "#333", lit: "#3a3a3a", shade: "#151515" };
+		const bodyColors = { top: C.body, lit: C.body, shade: C.bodyShade };
+		const depthAt = (x: number, y: number) => {
+			const w = toWorld({ x, y });
+			return w.x + w.y;
+		};
 
 		const wheels = [
 			{ x: 1.3, y: -0.9, steer: car.steerAngle },
 			{ x: 1.3, y: 0.9, steer: car.steerAngle },
 			{ x: -1.35, y: -0.92, steer: 0 },
 			{ x: -1.35, y: 0.92, steer: 0 },
-		].map((w) => {
-			const c = Math.cos(w.steer);
-			const sn = Math.sin(w.steer);
-			const corner = (dx: number, dy: number) =>
-				toWorld({ x: w.x + dx * c - dy * sn, y: w.y + dx * sn + dy * c });
-			const side = Math.sign(w.y);
-			return {
-				local: w,
-				base: [
-					corner(-0.4, -0.18),
-					corner(0.4, -0.18),
-					corner(0.4, 0.18),
-					corner(-0.4, 0.18),
-				],
-				outer: [corner(-0.4, 0.18 * side), corner(0.4, 0.18 * side)],
-				side,
-			};
-		});
-		const depthOf = (pts: Vec2[]) => {
-			const c = centroid(pts);
-			return c.x + c.y;
-		};
-		wheels.sort((a, b) => depthOf(a.base) - depthOf(b.base));
-		for (const w of wheels) this.prism(w.base, 0, WHEEL_TOP, wheelColors, 0.07);
+		].sort((a, b) => depthAt(a.x, a.y) - depthAt(b.x, b.y));
+		for (const w of wheels) this.drawTire(car, w.x, w.y, w.steer);
 
 		this.prism(
 			CAR_OUTLINE.map(toWorld),
 			BODY_BOTTOM,
 			BED_TOP,
-			{ top: C.body, lit: C.body, shade: C.bodyShade },
+			bodyColors,
 			0.12,
 			1,
-			() => this.drawHood(car, light),
+			() => this.drawBedTop(car, light),
 		);
-
-		// Tire sidewalls that stick out past the body are in front of it.
-		for (const w of wheels) {
-			const outward = rotate({ x: 0, y: w.side }, car.angle);
-			if (outward.x + outward.y <= 0) continue;
-			const [a, b] = w.outer;
-			const lit = outward.x * SUN_2D.x + outward.y * SUN_2D.y > 0.1;
-			this.fillScreenPoly(
-				[
-					this.P(a.x, a.y, 0),
-					this.P(b.x, b.y, 0),
-					this.P(b.x, b.y, WHEEL_TOP * 0.62),
-					this.P(a.x, a.y, WHEEL_TOP * 0.62),
-				],
-				lit ? wheelColors.lit : wheelColors.shade,
-				0.07 * this.s,
-			);
-		}
-
-		const drawCab = () =>
+		this.prism(
+			[
+				{ x: 2.16, y: -0.58 },
+				{ x: 2.16, y: 0.58 },
+				{ x: 0.9, y: 0.74 },
+				{ x: 0.9, y: -0.74 },
+			].map(toWorld),
+			BED_TOP,
+			HOOD_TOP,
+			bodyColors,
+			0.08,
+			0.9,
+			() => this.drawHoodCap(car, light),
+		);
+		this.prism(
+			[
+				{ x: 2.18, y: -0.7 },
+				{ x: 2.4, y: -0.64 },
+				{ x: 2.4, y: 0.64 },
+				{ x: 2.18, y: 0.7 },
+			].map(toWorld),
+			0.22,
+			0.46,
+			{ top: "#4b4b4b", lit: "#5a5a5a", shade: "#262626" },
+			0.05,
+		);
+		for (const y of [-0.16, 0, 0.16]) {
 			this.prism(
-				CAB_OUTLINE.map(toWorld),
-				BED_TOP,
-				CAB_TOP,
-				{ top: C.roof, lit: C.glass, shade: C.glassShade },
-				0.1,
-				0.86,
-				() => this.drawRoof(car, light),
+				[
+					{ x: 2.14, y: y - 0.045 },
+					{ x: 2.24, y: y - 0.045 },
+					{ x: 2.24, y: y + 0.045 },
+					{ x: 2.14, y: y + 0.045 },
+				].map(toWorld),
+				0.5,
+				0.78,
+				{ top: "#2a1d14", lit: "#3a322c", shade: "#1a120e" },
+				0.03,
 			);
-		const drawTub = () => this.drawTub(car, fluid, toward);
-		const tubDepth = depthOf([toWorld({ x: -1.35, y: 0 })]);
-		const cabDepth = depthOf([toWorld({ x: 0.17, y: 0 })]);
-		if (tubDepth < cabDepth) {
-			drawTub();
-			drawCab();
-		} else {
-			drawCab();
-			drawTub();
 		}
+		for (const side of [-1, 1]) {
+			const lamp = toWorld({ x: 2.18, y: side * 0.5 });
+			this.cylinder(
+				lamp.x,
+				lamp.y,
+				0.11,
+				0.52,
+				0.76,
+				{
+					top: "#fff6c2",
+					lit: "#ffe27a",
+					shade: "#c9a24a",
+				},
+				0.04,
+			);
+			const tail = toWorld({ x: -2.22, y: side * 0.55 });
+			this.cylinder(
+				tail.x,
+				tail.y,
+				0.08,
+				0.48,
+				0.66,
+				{
+					top: "#ff6a55",
+					lit: "#ff3b2f",
+					shade: "#8c2219",
+				},
+				0.04,
+			);
+		}
+
+		const metal = { top: "#c9c1b5", lit: "#7a736a", shade: "#4a453f" };
+		const rails: { depth: number; draw: () => void }[] = [
+			[
+				{ x: -2.2, y: -0.82 },
+				{ x: -2.02, y: -0.82 },
+				{ x: -2.02, y: 0.82 },
+				{ x: -2.2, y: 0.82 },
+			],
+			[
+				{ x: -2.08, y: 0.7 },
+				{ x: -0.76, y: 0.7 },
+				{ x: -0.76, y: 0.88 },
+				{ x: -2.08, y: 0.88 },
+			],
+			[
+				{ x: -2.08, y: -0.88 },
+				{ x: -0.76, y: -0.88 },
+				{ x: -0.76, y: -0.7 },
+				{ x: -2.08, y: -0.7 },
+			],
+		].map((shape) => ({
+			depth: depthAt(
+				shape.reduce((s, p) => s + p.x, 0) / shape.length,
+				shape.reduce((s, p) => s + p.y, 0) / shape.length,
+			),
+			draw: () =>
+				this.prism(shape.map(toWorld), BED_TOP, RAIL_TOP, metal, 0.06),
+		}));
+		const parts: Solid[] = [
+			...rails,
+			{
+				depth: depthAt(-1.35, 0),
+				draw: () => this.drawTub(car, fluid, toward),
+			},
+			{
+				depth: depthAt(0.17, 0),
+				draw: () => {
+					this.prism(
+						CAB_OUTLINE.map(toWorld),
+						BED_TOP,
+						CAB_TOP,
+						bodyColors,
+						0.1,
+						0.9,
+						() => this.drawRoof(car, light),
+					);
+					this.drawWindows(car);
+				},
+			},
+		];
+		parts.sort((a, b) => a.depth - b.depth);
+		for (const part of parts) part.draw();
 	}
 
-	/** Bonnet and bed-top details, drawn in car-local meters on the body's top plane. */
-	private drawHood(car: VehicleSnapshot, light: Vec2) {
+	/** Round tire. The axle follows the steer angle; the near sidewall carries the hub. */
+	private drawTire(
+		car: VehicleSnapshot,
+		lx: number,
+		ly: number,
+		steer: number,
+	) {
+		const radius = 0.36;
+		const half = 0.13;
+		const toWorld = this.carToWorld(car);
+		const c = Math.cos(steer);
+		const sn = Math.sin(steer);
+		const ring = (side: number) => {
+			const pts: Vec2[] = [];
+			const steps = 12;
+			for (let i = 0; i < steps; i++) {
+				const a = (i / steps) * Math.PI * 2;
+				const along = Math.cos(a) * radius;
+				const lateral = half * side;
+				const w = toWorld({
+					x: lx + along * c - lateral * sn,
+					y: ly + along * sn + lateral * c,
+				});
+				pts.push(this.P(w.x, w.y, radius + Math.sin(a) * radius));
+			}
+			return pts;
+		};
+		const outward = Math.sign(ly) || 1;
+		const capCenter = (side: number) =>
+			toWorld({
+				x: lx - half * side * sn,
+				y: ly + half * side * c,
+			});
+		const outer = capCenter(outward);
+		const inner = capCenter(-outward);
+		const outerNear = outer.x + outer.y >= inner.x + inner.y;
+		const near = ring(outerNear ? outward : -outward);
+		const far = ring(outerNear ? -outward : outward);
+		this.fillScreenPoly(
+			convexHull([...near, ...far]),
+			"#1c1c1c",
+			0.045 * this.s,
+		);
+		this.fillScreenPoly(near, "#333", 0.04 * this.s);
+		this.fillScreenPoly(shrink(near, 0.42), "#d9d3c7", 0.03 * this.s);
+		this.fillScreenPoly(shrink(near, 0.14), "#5c5c5c", 0);
+	}
+
+	/** Dirt and the bed rim, on the body's top plane. */
+	private drawBedTop(car: VehicleSnapshot, light: Vec2) {
 		const ctx = this.ctx;
 		ctx.translate(car.pos.x, car.pos.y);
 		ctx.rotate(car.angle);
-
 		ctx.save();
 		ctx.clip(this.carPath);
 		ctx.translate(light.x * 0.16, light.y * 0.16);
 		ctx.fillStyle = "#ffd36a";
-		ctx.globalAlpha = 0.45;
+		ctx.globalAlpha = 0.4;
 		ctx.fill(this.carPath);
 		ctx.restore();
-
-		ctx.fillStyle = C.stripe;
-		ctx.fillRect(0.95, -0.34, 1.3, 0.17);
-		ctx.fillRect(0.95, 0.17, 1.3, 0.17);
 		ctx.fillStyle = "#8a4b1f";
 		ctx.beginPath();
-		ctx.ellipse(1.75, 0.6, 0.16, 0.09, 0.4, 0, Math.PI * 2);
-		ctx.ellipse(-1.6, -0.74, 0.2, 0.07, -0.2, 0, Math.PI * 2);
+		ctx.ellipse(-1.55, -0.7, 0.18, 0.06, -0.2, 0, Math.PI * 2);
 		ctx.fill();
-
-		const scoop = roundRectPath(1.25, -0.22, 0.62, 0.44, 0.08);
-		this.cel(scoop, "#2a1d14", "#4a3628", light.x * 0.04, light.y * 0.04, 0.06);
-		for (const side of [-1, 1]) {
-			this.cel(
-				circlePath(2.08, side * 0.58, 0.13),
-				"#d9b44a",
-				"#fff3b0",
-				-0.02,
-				-0.02,
-				0.05,
-			);
-			ctx.fillStyle = "#ff3b2f";
-			ctx.fillRect(-2.27, side * 0.62 - 0.1, 0.14, 0.2);
-		}
-
 		const t = car.trunkLocal;
 		const rim = roundRectPath(
 			t.minX - 0.1,
@@ -1190,17 +1346,95 @@ export class Renderer {
 		this.cel(rim, "#4a453f", "#7a736a", light.x * 0.05, light.y * 0.05, 0.08);
 	}
 
+	/** Stripes and the hood scoop, on the raised hood. */
+	private drawHoodCap(car: VehicleSnapshot, light: Vec2) {
+		const ctx = this.ctx;
+		ctx.translate(car.pos.x, car.pos.y);
+		ctx.rotate(car.angle);
+		ctx.fillStyle = C.stripe;
+		ctx.fillRect(0.95, -0.28, 1.15, 0.12);
+		ctx.fillRect(0.95, 0.16, 1.15, 0.12);
+		const scoop = roundRectPath(1.28, -0.2, 0.55, 0.4, 0.08);
+		this.cel(scoop, "#2a1d14", "#4a3628", light.x * 0.04, light.y * 0.04, 0.05);
+	}
+
 	private drawRoof(car: VehicleSnapshot, light: Vec2) {
 		const ctx = this.ctx;
 		ctx.translate(car.pos.x, car.pos.y);
 		ctx.rotate(car.angle);
 		ctx.translate(light.x * 0.08, light.y * 0.08);
 		ctx.fillStyle = "#ffc451";
-		ctx.fillRect(-0.7, -0.7, 1.7, 1.4);
+		ctx.fillRect(-0.55, -0.62, 1.45, 1.24);
 		ctx.translate(-light.x * 0.08, -light.y * 0.08);
 		ctx.fillStyle = C.stripe;
-		ctx.fillRect(-0.7, -0.34, 1.7, 0.17);
-		ctx.fillRect(-0.7, 0.17, 1.7, 0.17);
+		ctx.fillRect(-0.55, -0.28, 1.45, 0.12);
+		ctx.fillRect(-0.55, 0.16, 1.45, 0.12);
+	}
+
+	/** Windshield, the camera-facing side glass, and the rear window. */
+	private drawWindows(car: VehicleSnapshot) {
+		const toWorld = this.carToWorld(car);
+		const project = (x: number, y: number, z: number) => {
+			const w = toWorld({ x, y });
+			return this.P(w.x, w.y, z);
+		};
+		const glass = (
+			pts: { x: number; y: number; z: number }[],
+			fill: string,
+		) => {
+			this.fillScreenPoly(
+				pts.map((p) => project(p.x, p.y, p.z)),
+				fill,
+				0.045 * this.s,
+			);
+		};
+		const facing = (n: Vec2) => n.x + n.y;
+		const front = rotate({ x: 1, y: 0 }, car.angle);
+		if (facing(front) > 0.02) {
+			glass(
+				[
+					{ x: 0.98, y: -0.52, z: BED_TOP + 0.14 },
+					{ x: 0.98, y: 0.52, z: BED_TOP + 0.14 },
+					{ x: 0.4, y: 0.38, z: CAB_TOP - 0.14 },
+					{ x: 0.4, y: -0.38, z: CAB_TOP - 0.14 },
+				],
+				C.glass,
+			);
+			const ctx = this.ctx;
+			const a = project(0.82, -0.28, BED_TOP + 0.55);
+			const b = project(0.58, -0.1, CAB_TOP - 0.42);
+			ctx.strokeStyle = "#f5ffff";
+			ctx.lineWidth = 0.045 * this.s;
+			ctx.beginPath();
+			ctx.moveTo(a.x, a.y);
+			ctx.lineTo(b.x, b.y);
+			ctx.stroke();
+		}
+		const right = rotate({ x: 0, y: 1 }, car.angle);
+		const side = facing(right) >= 0 ? 1 : -1;
+		const sideNormal = side > 0 ? right : { x: -right.x, y: -right.y };
+		if (facing(sideNormal) > 0.05) {
+			glass(
+				[
+					{ x: 0.7, y: 0.64 * side, z: BED_TOP + 0.32 },
+					{ x: -0.22, y: 0.64 * side, z: BED_TOP + 0.32 },
+					{ x: -0.16, y: 0.54 * side, z: CAB_TOP - 0.36 },
+					{ x: 0.46, y: 0.54 * side, z: CAB_TOP - 0.36 },
+				],
+				C.glass,
+			);
+		}
+		if (facing({ x: -front.x, y: -front.y }) > 0.25) {
+			glass(
+				[
+					{ x: -0.56, y: -0.4, z: BED_TOP + 0.4 },
+					{ x: -0.56, y: 0.4, z: BED_TOP + 0.4 },
+					{ x: -0.4, y: 0.3, z: CAB_TOP - 0.3 },
+					{ x: -0.4, y: -0.3, z: CAB_TOP - 0.3 },
+				],
+				C.glassShade,
+			);
+		}
 	}
 
 	/** Open tub sunk into the bed: clip to the opening, then floor, far walls and liquid. */
