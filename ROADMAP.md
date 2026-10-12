@@ -38,13 +38,13 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] Commit `package-lock.json`; CI uses `npm ci` with npm cache enabled.
-- [ ] Add `npm run typecheck` (or split `tsc --noEmit` from build) for local and CI clarity.
-- [ ] ESLint + Prettier (or Biome) aligned with existing TypeScript style; run in CI.
-- [ ] GitHub issue templates: **bug**, **feature**, **physics/rendering**; label set matching phases (`phase-1` … `phase-5`).
-- [ ] `CONTRIBUTING.md`: branch naming, conventional commits, how to run tests and preview Pages base path.
-- [ ] Pages meta: Open Graph / Twitter cards, short description, theme color (already partial in `index.html`).
-- [ ] Document seed in HUD or URL (`?seed=12345`) for bug reports and sharing **read-only** links (no leaderboard yet).
+- [x] Commit `package-lock.json`; CI uses `npm ci` with npm cache enabled.
+- [x] Add `npm run typecheck` (or split `tsc --noEmit` from build) for local and CI clarity.
+- [x] ESLint + Prettier (or Biome) aligned with existing TypeScript style; run in CI.
+- [x] GitHub issue templates: **bug**, **feature**, **physics/rendering**; label set matching phases (`phase-1` … `phase-5`).
+- [x] `CONTRIBUTING.md`: branch naming, conventional commits, how to run tests and preview Pages base path.
+- [x] Pages meta: Open Graph / Twitter cards, short description, theme color (already partial in `index.html`).
+- [x] Document seed in HUD or URL (`?seed=12345`) for bug reports and sharing **read-only** links (no leaderboard yet).
 
 **Acceptance criteria**
 
@@ -72,12 +72,12 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] **Run modes** (menu or query flags): *Practice* (current rules), *Contract* (lose if cargo &lt; X% at finish), *Time trial* (best time with cargo floor).
-- [ ] **Daily seed** (UTC date → seed) with fixed ruleset; show seed on intro and results.
-- [ ] **Local persistence** (`localStorage`): best grade/time per mode for daily seed + personal bests for arbitrary seeds.
-- [ ] **Pause** (desktop `P`, touch button); blur pauses sim.
-- [ ] **Results breakdown**: spilled volume (L), peak slosh speed, off-road time, hardest G event — drives learning without extra UI clutter.
-- [ ] **Tutorial beats**: 3 optional overlay hints (first spill, first handbrake, first tight turn) keyed off events, dismiss forever flag.
+- [x] **Run modes** (menu or query flags): *Practice* (current rules), *Contract* (lose if cargo &lt; X% at finish), *Time trial* (best time with cargo floor).
+- [x] **Daily seed** (UTC date → seed) with fixed ruleset; show seed on intro and results.
+- [x] **Local persistence** (`localStorage`): best grade/time per mode for daily seed + personal bests for arbitrary seeds.
+- [x] **Pause** (desktop `P`, touch button); blur pauses sim.
+- [x] **Results breakdown**: spilled volume (L), peak slosh speed, off-road time, hardest G event — drives learning without extra UI clutter.
+- [x] **Tutorial beats**: 3 optional overlay hints (first spill, first handbrake, first tight turn) keyed off events, dismiss forever flag.
 
 **Acceptance criteria**
 
@@ -105,12 +105,12 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] **Track archetypes** from seed bands or explicit picker: *Flats*, *Canyon*, *Boulder field* (parameter sets in `Track` generator).
-- [ ] **Checkpoints** (optional): must pass segments in order; show segment progress on HUD.
-- [ ] **Cargo presets**: water (default), *thick* (higher viscosity → damped waves, new `FluidLayer` params), *volatile* (sloshes harder on same accel — tuning + visual).
-- [ ] **Vehicle presets**: pickup (default), *short wheelbase* (snappier yaw, worse spill tolerance) — data-driven constants file.
-- [ ] **Obstacle interactions**: barrels that roll when hit (Matter dynamic bodies, capped count); cactus slow-down without instant stop.
-- [ ] **Difficulty slider** (easy / medium / hard): road width, obstacle density, AI traffic none — maps to generator knobs.
+- [x] **Track archetypes** from seed bands or explicit picker: *Flats*, *Canyon*, *Boulder field* (parameter sets in `Track` generator).
+- [x] **Checkpoints** (optional): must pass segments in order; show segment progress on HUD.
+- [x] **Cargo presets**: water (default), *thick* (higher viscosity → damped waves, new `FluidLayer` params), *volatile* (sloshes harder on same accel — tuning + visual).
+- [x] **Vehicle presets**: pickup (default), *short wheelbase* (snappier yaw, worse spill tolerance) — data-driven constants file.
+- [x] **Obstacle interactions**: barrels that roll when hit (Matter dynamic bodies, capped count); cactus slow-down without instant stop.
+- [x] **Difficulty slider** (easy / medium / hard): road width, obstacle density, AI traffic none — maps to generator knobs.
 
 **Acceptance criteria**
 
@@ -138,12 +138,12 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] **Adaptive fluid grid**: coarser grid when tub quiescent; refine when spilling or high |ω| (document invariants for conservation).
-- [ ] **Optional Web Worker** fluid step (transfer minimal state); main thread vehicle + render; benchmark vs sync path.
-- [ ] **Slosh audio driver**: one-shots from surface wave energy / spill rate (no continuous loop required in Phase 4 — see Phase 5 for full mix).
-- [ ] **Replay buffer**: record inputs + seed for last run; export JSON for bug reports.
-- [ ] **Deterministic replay test**: feed recorded inputs → same finish grade within tolerance (golden replay fixture).
-- [ ] **Sand / off-road**: deeper sink model (speed-dependent drag already partial — unify with track `query`).
+- [x] **Adaptive fluid grid**: coarser grid when tub quiescent; refine when spilling or high |ω| (document invariants for conservation). *(Quiet tubs pair neighboring MAC faces and take a longer substep. Hot tubs, spills, and high |ω| use every face. Height updates stay conservative via the outflow limiter.)*
+- [x] **Optional Web Worker** fluid step (transfer minimal state); main thread vehicle + render; benchmark vs sync path. *(Settings / `?worker=1` integrate one frame behind on a worker. Sync stays the default so replays match. Custom goo stays on the sync path.)*
+- [x] **Slosh audio driver**: one-shots from surface wave energy / spill rate (no continuous loop required in Phase 4 — see Phase 5 for full mix).
+- [x] **Replay buffer**: record inputs + seed for last run; export JSON for bug reports.
+- [x] **Deterministic replay test**: feed recorded inputs → same finish grade within tolerance (golden replay fixture).
+- [x] **Sand / off-road**: deeper sink model (speed-dependent drag already partial — unify with track `query`).
 
 **Acceptance criteria**
 
@@ -171,16 +171,16 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] **Liquid read**: meniscus line, specular band in art pass; shader preserves hue on deep tub shadow.
-- [ ] **Camera polish**: slight roll into turn, spill-triggered punch-in optional (accessibility off).
-- [ ] **UI pass**: comic panels for intro/results; animated grade stamp; reduce font flash on mobile.
-- [ ] **SFX layer**: engine load, tire scrub, spill splash, finish sting (Web Audio, user gesture unlock).
-- [ ] **Settings panel**: ink on/off, SFX, reduced motion, sensitivity (touch + keyboard ramp).
-- [ ] **Quality tiers**: auto-detect WebGL + DPR; manual Low / Med / High (disable hatching levels on Low).
+- [x] **Liquid read**: meniscus line, specular band in art pass; shader preserves hue on deep tub shadow.
+- [x] **Camera polish**: slight roll into turn, spill-triggered punch-in optional (accessibility off).
+- [x] **UI pass**: comic panels for intro/results; animated grade stamp; reduce font flash on mobile.
+- [x] **SFX layer**: engine load, tire scrub, spill splash, finish sting (Web Audio, user gesture unlock).
+- [x] **Settings panel**: ink on/off, SFX, reduced motion, sensitivity (touch + keyboard ramp).
+- [x] **Quality tiers**: auto-detect WebGL + DPR; manual Low / Med / High (disable hatching levels on Low).
 
 **Acceptance criteria**
 
-- Ink-off and Low tier maintain ≥45 FPS on reference mid-tier phone (document device in issue).
+- Ink-off and Low tier maintain ≥45 FPS on reference mid-tier phone (document device in issue). *(CI: `perf.test.ts` guards 120 fluid steps &lt;250 ms on the runner; track real devices in a `phase-5` issue when available.)*
 - Settings persist locally; reduced motion disables camera roll and shake.
 - Liquid level readable at default zoom without debug mode.
 
@@ -203,11 +203,11 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 **Deliverables**
 
-- [ ] **Share card**: PNG or canvas snapshot of results + seed + QR to game URL (client-side only).
-- [ ] **Ghost replay**: store best local replay; race translucent ghost on same seed (from Phase 4 buffer).
-- [ ] **Leaderboard stub**: document GitHub Discussions or external form for daily seed screenshots; **or** integrate free tier API (Supabase / Cloudflare Workers) with signed score submit — behind env flag, not required for deploy.
-- [ ] **Achievements** (local): first S rank, zero-spill finish, win on hard archetype, etc.
-- [ ] **Modding hook (minimal)**: export `trunkConstants` + fluid params as JSON for “custom goo” sandbox mode.
+- [x] **Share card**: PNG or canvas snapshot of results + seed + QR to game URL (client-side only).
+- [x] **Ghost replay**: store best local replay; race translucent ghost on same seed (from Phase 4 buffer).
+- [x] **Leaderboard stub**: document GitHub Discussions or external form for daily seed screenshots; **or** integrate free tier API (Supabase / Cloudflare Workers) with signed score submit — behind env flag, not required for deploy. *(v0.7: copy a score post and open GitHub Discussions. No API and no secrets.)*
+- [x] **Achievements** (local): first S rank, zero-spill finish, win on hard archetype, etc.
+- [x] **Modding hook (minimal)**: export `trunkConstants` + fluid params as JSON for “custom goo” sandbox mode.
 
 **Acceptance criteria**
 
