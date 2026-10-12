@@ -229,16 +229,14 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 Phases 0–11 are shipped on this line (v0.12.0). The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank, and a short ramp can leave the ground. The HUD has a slosh meter and a next-bend chevron. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a hard hit plays an impact thud.
 
-The picture and the mix are still the thin ones from before that motion work:
+The models pass and this line are one tree. The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. A sidewall mark advances with `wheelAngle`. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, a continuous slosh bed, tire scrub that is updated every step, and the impact thud.
 
-- The pickup is a chamfered prism. Wheels are boxes with a cream dot. Hood stripes, the scoop, and the lamps are flat graphics on the body’s top plane, so pitch shears them. There is no raised hood, grille, glass plane, or bed rail.
-- Rocks are one frustum. Cacti are a cylinder plus arm prisms. Barrels are a banded cylinder. Tire stacks are cylinders with a painted hub circle.
-- Banking moves the liquid and does not move the road. The ribbon is level across its width. Boulder steps and the ramp read only as a slow rise. Shadows are a flat offset on the local ground plane.
-- Droplets and dust puffs are circles. `?review=juice` holds both on screen.
+What the next phases are still for:
+
+- Banking moves the liquid. The ribbon stays level across its width. Boulder steps and the ramp read only as a slow rise. Shadows are a flat offset on the local ground plane.
 - The ink pass is still one fragment shader: Sobel, five cel bands, world-anchored hatch, animated grain, vignette. Grain makes a full-frame hash noisy. The Phase 7 check is geometric (the truck stays in the lower half).
-- The engine is one saw and one triangle on the same frequency, through a lowpass. Tire scrub, slosh, splash, and the impact thud are one-shots. There is no road rumble, no exhaust layer, and no continuous slosh bed. Scrub is updated only while some wheel’s skid is above 0.2, so the rasp can stick after the slide ends. Thick, water, and volatile cargo share that mix; only the tub color changes.
-
-`main` has a separate models pass (round tires, raised hood, bumper, grille, lamps, bed rails, glass, a two-stage rock, cactus spines, a barrel lid, and a layered mix with road rumble and a continuous slosh bed). That pass is not in this tree. It draws the truck at height 0, the tires do not roll with `wheelAngle`, the body does not pitch, and that mix has no impact thud. Phases 12–16 bring that art and mix onto the height, spin, pitch, and thud this tree already has, then add the reads neither line has: a visible bank, ink that can be sampled, and a cargo voice.
+- Thick, water, and volatile cargo share the slosh bed. Only the tub color changes. There is no separate lip accent on top of that bed.
+- Droplets and dust puffs are circles. `?review=juice` holds both on screen.
 
 ---
 
@@ -412,9 +410,9 @@ The picture and the mix are still the thin ones from before that motion work:
 
 **Deliverables**
 
-- [ ] Bring the models-pass solids onto this tree’s `car.z`, pitch lift, and painter order. The tub opening stays on the bed, with no pitch term, so the clip still matches.
-- [ ] A sidewall or hub mark advances with `wheelAngle`, including while steering.
-- [ ] Draw the two-stage rock, cactus spines, barrel lid, and tire hub at `obstacle.z` (and flag poles at their ground height). Collision radii stay as they are.
+- [x] Bring the models-pass solids onto this tree’s `car.z`, pitch lift, and painter order. The tub opening stays on the bed, with no pitch term, so the clip still matches.
+- [x] A sidewall or hub mark advances with `wheelAngle`, including while steering.
+- [x] Draw the two-stage rock, cactus spines, barrel lid, and tire hub at `obstacle.z` (and flag poles at their ground height). Collision radii stay as they are.
 
 **Acceptance criteria**
 
@@ -509,10 +507,10 @@ The picture and the mix are still the thin ones from before that motion work:
 
 **Deliverables**
 
-- [ ] Bring the layered bus across: `engineFreqFor`, `engineGainFor`, `rollGainFor`, `sloshGainFor`. The body layer uses a fixed fraction of the engine gain when the engine is audible, and 0 when it is parked.
-- [ ] Call `tireScrub`, `surfaceRoll`, and the slosh bed every step. Scrub gain is 0 when the amount is below 0.2.
+- [x] Bring the layered bus across: `engineFreqFor`, `engineGainFor`, `rollGainFor`, `sloshGainFor`. The body layer uses a fixed fraction of the engine gain when the engine is audible, and 0 when it is parked.
+- [x] Call `tireScrub`, `surfaceRoll`, and the slosh bed every step. Scrub gain is 0 when the amount is below 0.2.
 - [ ] Continuous slosh from `sloshSpeed`, silent under the calm threshold (0.08). Add a short lip accent only when the HUD band is “lip” or a spill starts. Calm frames start no one-shot.
-- [ ] Keep `impactThud` and `impactGainFor`. The cooldown still collapses two hits into one.
+- [x] Keep `impactThud` and `impactGainFor`. The cooldown still collapses two hits into one.
 
 **Acceptance criteria**
 
@@ -578,7 +576,7 @@ Items that do not block a single phase but should be picked up when touching nea
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–11 are done. New work starts at Phase 12 unless the issue says why it skips ahead.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–12 are done. Phase 15 is partly in from the models merge (layered bus, rumble, thud). New work starts at Phase 13 unless the issue says why it skips ahead.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
