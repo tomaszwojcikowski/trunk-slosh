@@ -1,5 +1,12 @@
 /** Web Audio mix. The context is created only inside a user gesture. */
 
+/** Loud enough to read as an engine on laptop speakers, silent when parked. */
+export function engineGainFor(speed: number, throttle: number): number {
+	const drive = Math.min(1, Math.abs(throttle));
+	if (speed <= 0.35 && drive <= 0.02) return 0;
+	return Math.min(0.34, 0.09 + drive * 0.2 + Math.min(speed, 40) * 0.004);
+}
+
 export class AudioBus {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
@@ -16,6 +23,7 @@ export class AudioBus {
 	private _enabled = true;
 	private lastSlosh = -1;
 	private lastSplash = -1;
+	private welcomed = false;
 
 	get enabled() {
 		return this._enabled;
@@ -30,8 +38,17 @@ export class AudioBus {
 	unlock() {
 		this.armed = true;
 		this.create();
-		if (!this._enabled) this.silence();
-		if (this.ctx?.state === "suspended") void this.ctx.resume();
+		if (!this._enabled) {
+			this.silence();
+			return;
+		}
+		const ctx = this.ctx;
+		if (!ctx) return;
+		if (ctx.state === "suspended") void ctx.resume();
+		if (!this.welcomed && this.master) {
+			this.welcomed = true;
+			this.tone(ctx, 98, 0.14, 0.12, ctx.currentTime, "sawtooth");
+		}
 	}
 
 	idle() {
@@ -45,15 +62,12 @@ export class AudioBus {
 			return;
 		const t = ctx.currentTime;
 		const drive = Math.min(1, Math.abs(throttle));
-		const moving = speed > 0.6 || drive > 0.08;
-		const freq = 48 + Math.min(speed, 40) * 2.4 + drive * 28;
-		const gain = moving
-			? Math.min(0.07, 0.012 + drive * 0.04 + speed * 0.0008)
-			: 0;
+		const freq = 52 + Math.min(speed, 40) * 3.1 + drive * 36;
+		const gain = engineGainFor(speed, throttle);
 		this.engine.frequency.setTargetAtTime(freq, t, 0.06);
 		this.engineHarmonic.frequency.setTargetAtTime(freq * 2, t, 0.06);
 		this.engineFilter?.frequency.setTargetAtTime(
-			220 + Math.min(speed, 40) * 14 + drive * 180,
+			420 + Math.min(speed, 40) * 22 + drive * 280,
 			t,
 			0.08,
 		);
@@ -67,7 +81,7 @@ export class AudioBus {
 		const t = ctx.currentTime;
 		const scrub = amount < 0.2 ? 0 : Math.min(1, amount);
 		this.scrubFilter.frequency.setTargetAtTime(700 + scrub * 900, t, 0.03);
-		this.scrubGain.gain.setTargetAtTime(scrub * 0.09, t, 0.03);
+		this.scrubGain.gain.setTargetAtTime(scrub * 0.28, t, 0.03);
 	}
 
 	spillSplash(liters: number) {
@@ -79,9 +93,9 @@ export class AudioBus {
 		this.lastSplash = t;
 		this.burst(
 			ctx,
-			180 + Math.min(500, liters * 18),
-			0.16,
-			Math.min(0.12, 0.04 + liters * 0.004),
+			240 + Math.min(700, liters * 22),
+			0.22,
+			Math.min(0.34, 0.16 + liters * 0.012),
 			"bandpass",
 		);
 	}
@@ -89,12 +103,12 @@ export class AudioBus {
 	finishSting() {
 		const ctx = this.ensure();
 		if (!ctx) return;
-		this.tone(ctx, 523, 0.16, 0.06, ctx.currentTime);
-		this.tone(ctx, 784, 0.22, 0.05, ctx.currentTime + 0.09);
+		this.tone(ctx, 523, 0.18, 0.2, ctx.currentTime);
+		this.tone(ctx, 784, 0.24, 0.16, ctx.currentTime + 0.09);
 	}
 
 	sloshTick(energy: number) {
-		if (energy < 0.15) return;
+		if (energy < 0.08) return;
 		const ctx = this.ensure();
 		if (!ctx) return;
 		const t = ctx.currentTime;
@@ -102,9 +116,9 @@ export class AudioBus {
 		this.lastSlosh = t;
 		this.tone(
 			ctx,
-			140 + Math.min(80, energy * 30),
-			0.07,
-			Math.min(0.03, 0.008 * energy),
+			110 + Math.min(90, energy * 40),
+			0.12,
+			Math.min(0.2, 0.06 + energy * 0.04),
 			t,
 			"sine",
 		);
@@ -139,7 +153,7 @@ export class AudioBus {
 
 		const filter = ctx.createBiquadFilter();
 		filter.type = "lowpass";
-		filter.frequency.value = 320;
+		filter.frequency.value = 480;
 		filter.Q.value = 0.7;
 		const engineGain = ctx.createGain();
 		engineGain.gain.value = 0;

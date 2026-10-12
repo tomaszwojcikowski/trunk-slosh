@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioBus } from "./AudioBus";
+import { AudioBus, engineGainFor } from "./AudioBus";
 
 class FakeParam {
 	value = 0;
@@ -82,5 +82,10 @@ describe("AudioBus", () => {
 		bus.engineLoad(12, 0.8);
 		bus.engineLoad(20, 1);
 		expect(starts).toBe(armed);
+	});
+
+	it("keeps a parked truck silent and a hard throttle loud", () => {
+		expect(engineGainFor(0, 0)).toBe(0);
+		expect(engineGainFor(22, 1)).toBeGreaterThan(0.25);
 	});
 });
