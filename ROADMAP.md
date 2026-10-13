@@ -227,7 +227,7 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–20 are shipped on this line (v0.21.0).
+Phases 0–20 are shipped on this line (v0.21.0). Next open work is **Phases 21–25** (animation settle, particle fades, mixer, wind/materials, chase and meter ease).
 
 The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a short truck draws the short axles. A hard hit plays an impact thud.
 
@@ -681,6 +681,165 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 ---
 
+## Phase 21 — Spring the pitch
+
+**Theme:** The cab already pitches from longitudinal load transfer. It should settle, not snap.
+
+**Goals**
+
+- Visual pitch is a spring-damper toward the Phase 11 target from `pitchFromLongAccel`.
+- A hard brake dips the nose and returns. A hard accel lifts it and returns.
+- The tub opening stays bed-fixed. Tire forces and `liquidBodyAccel` stay as they are.
+
+**Deliverables**
+
+- [ ] A pure `settlePitch(current, target, dt, …)` (or equivalent) with unit-tested stiffness and damping. Zero target decays toward level.
+- [ ] The renderer (or the snapshot consumer) uses the settled pitch for body, hood, and cab lift. The tub opening still ignores pitch.
+- [ ] Reduced motion skips overshoot: pitch tracks the target without a spring, or holds the undamped value. Shake and spill punch rules stay as they are.
+
+**Acceptance criteria**
+
+- A step to a non-zero target overshoots at most once and settles within a stated tolerance inside a few tenths of a second at 120 Hz.
+- Zero longitudinal transfer still ends at pitch 0.
+- Existing `pitchFromLongAccel` and wheel-angle tests still pass. Replay version stays 2.
+
+**Dependencies:** Phase 11 pitch. Phase 12 solids that take the pitch lift.
+
+**Risks**
+
+- A soft spring lags a short braking pulse so the nose never dips. Stiffness must still read a hard stop in under half a second.
+- Applying settle to the tub opening shears the liquid clip. Keep the opening on the bed.
+
+---
+
+## Phase 22 — Soft endings for dust and rubber
+
+**Theme:** Spill juice already has the right silhouettes. The last frames should fade, not pop.
+
+**Goals**
+
+- A dust puff shrinks and fades from `life / maxLife`.
+- A ground splat soaks out with alpha from remaining life.
+- A skid mark softens before it is removed. A spill popup rises then fades.
+
+**Deliverables**
+
+- [ ] Pure helpers for puff scale/alpha, splat alpha, skid alpha, and popup offset/alpha from life (and `maxLife` where it exists). Unit-tested at full life, mid life, and zero.
+- [ ] The isometric draw path uses those helpers. Droplet streaks from Phase 16 stay velocity-capped.
+- [ ] Pool caps and lifetimes (`SPLAT_LIFE`, `SKID_LIFE`, puff `maxLife`) stay unless a test proves a pop. Volume conservation is unchanged.
+
+**Acceptance criteria**
+
+- At `life === 0` every helper returns zero alpha (or zero scale). At full life, alpha is at the current full value.
+- `?review=juice` still shows a non-circular droplet and a two-lobe puff.
+- Particle pool tests still pass. Replay version stays 2.
+
+**Dependencies:** Phase 11 particles, Phase 16 droplet/puff silhouettes.
+
+**Risks**
+
+- Fading by skipping draw until mid-life hides small spills. Fade alpha, keep the splat until life hits zero.
+- Per-frame path allocation for curves will show up in the fluid step budget. Keep helpers allocation-free.
+
+---
+
+## Phase 23 — A mixer the player can trust
+
+**Theme:** The layered mix is audible. Turning it down, pausing, or muting should not click.
+
+**Goals**
+
+- A master volume control in Settings, persisted with the other display settings.
+- Enabling or disabling SFX ramps gains instead of snapping to zero.
+- Pause and the results card duck continuous layers. One-shots stay gated by the existing cooldowns.
+
+**Deliverables**
+
+- [ ] `settings.masterVolume` (0…1, default near today’s fixed master). The bus applies it on the master gain every step the mix runs.
+- [ ] Soft mute: SFX off and `idle()` ramp continuous gains toward 0 with `setTargetAtTime` (or equivalent). No `cancelScheduledValues` snap to 0 on the audible path.
+- [ ] Duck engine, exhaust, roll, scrub, and slosh while paused or on the results overlay. Finish sting and impact thud still play when SFX is on.
+- [ ] Optional: a DynamicsCompressorNode on the master so stacked layers do not clip on laptop speakers. Caps from Phase 15 stay as a backstop.
+
+**Acceptance criteria**
+
+- Volume 0 is silent with SFX still checked. Volume 1 matches or stays under today’s peak within a stated tolerance.
+- Toggling SFX off then on does not produce a one-frame full-gain spike in a unit test of the ramp helper.
+- Reduced motion still clears shake and punch only. It leaves the mix playing when not ducked by pause.
+
+**Dependencies:** Phase 15 layered bus. Phase 2 pause and results. Phase 5 settings persistence.
+
+**Risks**
+
+- Ducking the finish sting with the results overlay swallows the reward. Duck continuous layers only.
+- A compressor with a slow release makes the next throttle surge feel late. Prefer a mild threshold and a fast release, or skip the compressor if caps already hold.
+
+---
+
+## Phase 24 — Desert wind and what you hit
+
+**Theme:** Speed and collisions already have signals. Give them voices that match the desert and the prop.
+
+**Goals**
+
+- A wind bed follows speed on the ground. It is quiet when parked and thinner in the air (same idea as Phase 20 rumble: no full stall, no full road roar).
+- An impact thud’s pitch or filter follows `ObstacleKind` when the hit has a kind. A nameless scrape keeps today’s tone.
+- Cooldown still collapses two hits into one thud.
+
+**Deliverables**
+
+- [ ] `windGainFor(speed, airborne)` (pure). Zero below a speed floor. Airborne uses a reduced curve. Unit-tested.
+- [ ] A continuous wind loop on the bus, updated every step like roll and scrub, including with gain 0.
+- [ ] `impactVoiceFor(kind)` (or pitch/filter pair) for `rock` | `cactus` | `barrel` | `tires`, plus a default. The game passes kind from the collision when available.
+- [ ] Phase 20 airborne mix still zeroes roll and drops throttle load. Wind is separate and follows its own airborne rule.
+
+**Acceptance criteria**
+
+- Parked wind gain is 0. Two `impactThud` calls inside the cooldown still start one tone.
+- Rock and barrel voices differ in at least one locked parameter (frequency or filter).
+- `perf.test.ts` still passes. Master caps from Phase 15 / 23 still hold with wind at speed.
+
+**Dependencies:** Phase 15 bus, Phase 20 airborne mix, Phase 3/10 obstacle kinds on the track.
+
+**Risks**
+
+- Wind plus roll plus exhaust at highway speed clips again. Cap wind under roll’s peak and keep the master limiter or caps.
+- Tagging every Matter contact with a kind is noisy. Prefer the obstacle contact that produced the `impact` spike; default when unknown.
+
+---
+
+## Phase 25 — Steady frame, steady meter
+
+**Theme:** Hard yaw and a flickering slosh band fight the comic read. Ease both without lying about the sim.
+
+**Goals**
+
+- The chase frame eases toward its lookahead target so a snap steer does not teleport the world.
+- The HUD slosh band (calm / moving / lip) uses hysteresis or a short hold so it does not flicker on a noisy surface speed.
+- Reduced motion keeps shake and punch at zero. It may keep camera ease (no nausea cue) and must leave the meter readable.
+
+**Deliverables**
+
+- [ ] A pure chase ease step (position and/or lookahead blend) with unit tests for a step input and a settle-to-target.
+- [ ] Slosh band hysteresis: enter “lip” and “moving” at the current thresholds; leave at slightly lower ones, or hold a band for a minimum time. Unit-tested.
+- [ ] Golden `?demo=` frame check still places the truck in the lower half after ease settles.
+- [ ] No change to fluid thresholds that drive spill or the lip accent. The accent still keys off the real lip/spill signals from Phase 15.
+
+**Acceptance criteria**
+
+- After a large camera target jump, eased position is strictly between old and new on the first step, and matches the target after settle.
+- A surface speed that chatters across the calm/moving boundary does not flip the band every frame in the hysteresis fixture.
+- Phase 7 golden frame and Phase 9 meter tests still pass once updated for hysteresis.
+- Replay version stays 2. Grade force and bank stay as they are.
+
+**Dependencies:** Phase 7 chase camera, Phase 9 slosh meter, Phase 15 lip accent signal.
+
+**Risks**
+
+- Heavy camera lag makes the next bend chevron feel late. Ease the chase, not the chevron’s track-space position.
+- Hysteresis that is too wide hides a real lip warning. Keep the enter threshold at today’s lip; only lower the exit.
+
+---
+
 ## Cross-cutting backlog (pull from any phase)
 
 Items that do not block a single phase but should be picked up when touching nearby code:
@@ -693,12 +852,15 @@ Items that do not block a single phase but should be picked up when touching nea
 | E2E smoke (Playwright) | 1 | Load page, dismiss intro, drive 2 s, no console errors |
 | Visual regression | 14 | Region sample with grain frozen; a full-frame hash stays noisy |
 | Accessibility audit | 1 + 5 | Focus order on overlays, ARIA live for spill warnings |
+| Master volume + soft mute | 23 | Avoid zipper noise when toggling SFX |
+| Wind vs roll headroom | 24 | Cap wind under roll so the master does not clip |
+| Chase ease vs chevron | 25 | Ease the camera, not the next-bend marker in track space |
 
 ---
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–20 are done. New work starts after Phase 20.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–20 are done. Next open work is Phase 21.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
@@ -730,5 +892,10 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.19.x** | Phase 18 |
 | **0.20.x** | Phase 19 |
 | **0.21.x** | Phase 20 |
+| **0.22.x** | Phase 21 |
+| **0.23.x** | Phase 22 |
+| **0.24.x** | Phase 23 |
+| **0.25.x** | Phase 24 |
+| **0.26.x** | Phase 25 |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.
