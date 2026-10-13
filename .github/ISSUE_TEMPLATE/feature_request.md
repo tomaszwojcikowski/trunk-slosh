@@ -9,6 +9,6 @@ labels: feature
 
 ## Roadmap phase (if any)
 
-- [ ] phase-1 … phase-25 (see ROADMAP.md)
+- [ ] phase-1 … phase-30 (see ROADMAP.md)
 
 ## Acceptance criteria

@@ -227,7 +227,7 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–25 are shipped on this line (v0.26.0).
+Phases 0–25 are shipped on this line (v0.26.0). Next open work is **Phases 26–30** (mode stakes, checkpoint/contract UX, ghost split, pause overlay, retry + live announcements).
 
 The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. The slosh band uses hysteresis so calm/moving/lip do not chatter. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
 
@@ -840,6 +840,158 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 ---
 
+## Phase 26 — Mode stakes on the intro
+
+**Theme:** The mode picker names practice, contract, and time trial. It should also say what each one costs.
+
+**Goals**
+
+- Changing the mode select shows one short stakes line under the pickers.
+- The line is a pure function of mode so copy stays unit-tested.
+- Practice, contract, and time trial each get a distinct blurb.
+
+**Deliverables**
+
+- [ ] `modeBlurb(mode)` returning one sentence per `RunMode`. Unit-tested.
+- [ ] An intro element (e.g. `#intro-mode-blurb`) updates when the mode select changes and on first bind.
+- [ ] No change to abort floors, finish floors, or URL query encoding.
+
+**Acceptance criteria**
+
+- Contract blurb mentions losing the run or the cargo floor. Time trial mentions time and a cargo floor. Practice mentions free practice or no fail.
+- The three blurbs are non-empty and distinct in a unit test.
+- Existing `parseRunConfig` / finish-floor tests still pass.
+
+**Dependencies:** Phase 2 run modes.
+
+**Risks**
+
+- A long blurb pushes the CTA off a phone viewport. Keep each line under ~90 characters.
+
+---
+
+## Phase 27 — Checkpoints celebrate; contracts warn
+
+**Theme:** Crossing a checkpoint only bumps a counter. Contract failure arrives without a warning band.
+
+**Goals**
+
+- Passing a checkpoint fires a short popup (and optional soft chime).
+- Cargo danger for contract (and time-trial floor) is a pure level from remaining ratio.
+- The cargo bar’s `data-level` uses that level in those modes so warn/danger read before abort.
+
+**Deliverables**
+
+- [ ] `cargoThreatLevel(ratio, mode)` → `"ok" | "warn" | "danger"`. Contract warn above abort, danger at/under abort. Time trial warn near its finish floor. Practice keeps today’s ok/warn/bad bands or maps to the same three names.
+- [ ] On checkpoint index advance, add a popup naming the checkpoint. Cooldown or one popup per index so it does not spam.
+- [ ] HUD cargo bar uses `cargoThreatLevel` (or practice’s existing bands) every update.
+- [ ] Optional: one soft bus chirp on checkpoint; no new continuous layer.
+
+**Acceptance criteria**
+
+- Unit tests lock contract danger at/under `CONTRACT_ABORT_RATIO` and warn in a band above it.
+- Advancing a checkpoint in a fixture produces exactly one popup for that index.
+- Volume conservation and replay version stay unchanged.
+
+**Dependencies:** Phase 2 contract abort, Phase 9 checkpoints, Phase 11 popups.
+
+**Risks**
+
+- Warning too early (e.g. at 80%) trains the player to ignore it. Keep warn close to the real floor/abort.
+
+---
+
+## Phase 28 — A ghost split you can read
+
+**Theme:** The ghost car is visible. The lead or lag should be a number.
+
+**Goals**
+
+- When a ghost is active, the HUD shows a signed time split versus the ghost’s elapsed.
+- Ahead is negative (faster); behind is positive. No ghost → no split.
+- Ghost elapsed comes from summing recorded frame `dt` values as the ghost steps.
+
+**Deliverables**
+
+- [ ] `GhostRunner` exposes `elapsed` (sum of consumed frame dts). Reset clears it.
+- [ ] `ghostSplitLabel(playerElapsed, ghostElapsed, active)` → `null` or a short string like `−0.4s` / `+1.2s`. Unit-tested around zero and sign.
+- [ ] HUD slot (reuse ghost line or add `#hud-ghost-split`) updates while driving when a ghost is active.
+
+**Acceptance criteria**
+
+- Equal elapsed formats as `0.0s` or an explicit even label locked by test.
+- Inactive ghost returns null and leaves the split hidden.
+- Ghost match rules and replay version stay as they are.
+
+**Dependencies:** Phase 2 ghosts / replay.
+
+**Risks**
+
+- Comparing wall time to ghost elapsed while the player is paused double-counts pause. Only advance player elapsed while simulating, the same as today.
+
+---
+
+## Phase 29 — A pause screen
+
+**Theme:** Pause changes a chip label. The player should see a clear paused state with ways out.
+
+**Goals**
+
+- Pausing opens an overlay: title, Resume, Restart, Settings (or Open settings).
+- Resume and `P` / Escape close it and unpause. Restart uses the existing restart action.
+- Sim stays frozen while the overlay is open (existing pause path).
+
+**Deliverables**
+
+- [ ] `#overlay-pause` markup and styles consistent with fail/result cards.
+- [ ] `togglePause` / blur still pause the sim; showing the overlay is part of the paused UI.
+- [ ] Buttons wire to resume, restart, and open-settings. Escape resumes when the pause overlay is up (and settings are closed).
+
+**Acceptance criteria**
+
+- While paused, `simulate` still early-returns (existing behavior).
+- Opening settings from pause leaves the run paused underneath.
+- Reduced motion and audio duck rules from Phase 23 still apply on pause.
+
+**Dependencies:** Phase 2 pause, Phase 23 duck.
+
+**Risks**
+
+- Stacking pause + settings + intro focus traps. Only one overlay owns Escape at a time; settings closes first, then pause.
+
+---
+
+## Phase 30 — Retry this seed, and say the spill
+
+**Theme:** Results bury the same-seed retry. Spills never reach assistive tech.
+
+**Goals**
+
+- Result and fail primary actions say they retry **this** seed. New track stays secondary.
+- An `aria-live` region announces spill bursts, lip band, and contract danger without visual clutter.
+- Announcement copy is built by pure helpers so it can be tested.
+
+**Deliverables**
+
+- [ ] Result/fail button labels: primary “Retry this seed” (existing restart action). Keep “New track” as the alt.
+- [ ] `#hud-live` (or similar) with `aria-live="polite"` and `aria-atomic="true"`.
+- [ ] `liveAnnouncement({ spillLiters?, band?, threat? })` (or split helpers) returns a short string or null. Unit-tested.
+- [ ] Game writes the live region on spill popup windows, when HUD band becomes `lip`, and when contract threat becomes `danger` (once per rising edge).
+
+**Acceptance criteria**
+
+- Restart still resets the same seed/config (no accidental new track).
+- A zero-spill update does not announce. A lip enter announces once until the band leaves lip.
+- No change to grade letters, share card, or persistence keys.
+
+**Dependencies:** Phase 2 results, Phase 27 threat levels, Phase 25 slosh band for lip.
+
+**Risks**
+
+- Announcing every slosh-meter flicker is noisy. Rising-edge only, and prefer the hysteresis band for lip.
+
+---
+
 ## Cross-cutting backlog (pull from any phase)
 
 Items that do not block a single phase but should be picked up when touching nearby code:
@@ -855,12 +1007,15 @@ Items that do not block a single phase but should be picked up when touching nea
 | Master volume + soft mute | 23 | Avoid zipper noise when toggling SFX |
 | Wind vs roll headroom | 24 | Cap wind under roll so the master does not clip |
 | Chase ease vs chevron | 25 | Ease the camera, not the next-bend marker in track space |
+| Mode blurb length | 26 | Keep intro stakes under ~90 characters for phones |
+| Ghost split vs pause | 28 | Player elapsed only advances while the sim runs |
+| Pause + settings Escape | 29 | Settings closes first, then the pause overlay |
 
 ---
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–25 are done. New work starts after Phase 25.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–25 are done. Next open work is Phase 26.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
@@ -897,5 +1052,10 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.24.x** | Phase 23 |
 | **0.25.x** | Phase 24 |
 | **0.26.x** | Phase 25 |
+| **0.27.x** | Phase 26 |
+| **0.28.x** | Phase 27 |
+| **0.29.x** | Phase 28 |
+| **0.30.x** | Phase 29 |
+| **0.31.x** | Phase 30 |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.
