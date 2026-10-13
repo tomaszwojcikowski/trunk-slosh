@@ -4,18 +4,30 @@ import {
 	engineFreqFor,
 	engineGainFor,
 	impactGainFor,
+	masterGainFor,
 	rollGainFor,
 	sloshGainFor,
+	softGainRamp,
+	softMuteTarget,
 	splashGainFor,
 } from "./AudioBus";
 
 class FakeParam {
 	value = 0;
-	setTargetAtTime(_v: number, _t: number, _c: number) {}
-	setValueAtTime(v: number, _t: number) {
+	targets: number[] = [];
+	cancels = 0;
+	snaps: number[] = [];
+	setTargetAtTime(v: number, _t: number, _c: number) {
+		this.targets.push(v);
 		this.value = v;
 	}
-	cancelScheduledValues(_t: number) {}
+	setValueAtTime(v: number, _t: number) {
+		this.snaps.push(v);
+		this.value = v;
+	}
+	cancelScheduledValues(_t: number) {
+		this.cancels++;
+	}
 	exponentialRampToValueAtTime(_v: number, _t: number) {}
 }
 
@@ -50,6 +62,18 @@ class FakeAudioContext {
 	}
 	createBiquadFilter() {
 		return new FakeNode();
+	}
+	createDynamicsCompressor() {
+		return {
+			threshold: new FakeParam(),
+			knee: new FakeParam(),
+			ratio: new FakeParam(),
+			attack: new FakeParam(),
+			release: new FakeParam(),
+			connect() {
+				return this;
+			},
+		};
 	}
 	createBuffer() {
 		return { getChannelData: () => new Float32Array(8) };
@@ -149,5 +173,17 @@ describe("AudioBus", () => {
 		expect(splashGainFor(8)).toBeGreaterThan(splashGainFor(1));
 		expect(rollGainFor(0, true)).toBe(0);
 		expect(rollGainFor(18, true)).toBeGreaterThan(rollGainFor(18, false));
+	});
+
+	it("ramps mute without a cancel-and-snap spike", () => {
+		expect(softMuteTarget(false, 1)).toBe(0);
+		expect(masterGainFor(1)).toBeCloseTo(0.8, 6);
+		expect(masterGainFor(0)).toBe(0);
+		const param = new FakeParam();
+		param.value = 0.8;
+		softGainRamp(param, 0, 0, 0.05);
+		expect(param.cancels).toBe(0);
+		expect(param.snaps).toEqual([]);
+		expect(param.targets).toEqual([0]);
 	});
 });

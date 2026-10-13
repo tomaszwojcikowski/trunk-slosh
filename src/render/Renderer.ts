@@ -1,6 +1,14 @@
 import { rotate, type Vec2 } from "../math/vec2";
 import type { FluidLayer } from "../physics/FluidLayer";
 import { type ParticlePool, SKID_LIFE, SPLAT_LIFE } from "../physics/Particles";
+import {
+	popupAlpha,
+	popupRise,
+	puffAlpha,
+	puffScale,
+	skidAlpha,
+	splatAlpha,
+} from "../physics/particleFade";
 import { TRUNK_LIP_HEIGHT } from "../physics/trunkConstants";
 import type { VehicleSnapshot } from "../physics/VehicleSimulation";
 import { CAR_SPEC } from "../physics/VehicleSimulation";
@@ -873,10 +881,13 @@ export class Renderer {
 			y: number;
 			r: number;
 			z: number;
+			fade: number;
 		}[] = [];
 		for (const s of particles.splats) {
+			const fade = splatAlpha(s.life, SPLAT_LIFE);
+			if (fade <= 0) continue;
 			if (!inView(s.x, s.y, s.r * 1.5)) continue;
-			const r = s.r * Math.min(1, (s.life / SPLAT_LIFE) * 3);
+			const r = s.r * Math.min(1, fade);
 			const path = new Path2D();
 			path.arc(s.x, s.y, r, 0, Math.PI * 2);
 			const rand = mulberry32(Math.floor(s.seed * 1e9));
@@ -888,25 +899,28 @@ export class Renderer {
 				path.moveTo(cx + rr, cy);
 				path.arc(cx, cy, rr, 0, Math.PI * 2);
 			}
-			blobs.push({ path, x: s.x, y: s.y, r, z: s.z });
+			blobs.push({ path, x: s.x, y: s.y, r, z: s.z, fade });
 		}
 		// Stroke everything first, then fill over it: overlapping puddles merge into one inked outline.
 		ctx.lineWidth = 0.16;
 		ctx.strokeStyle = rgb(C.liquidDeep);
 		for (const b of blobs) {
 			this.planeAt(b.z);
+			ctx.globalAlpha = b.fade;
 			ctx.strokeStyle = rgb(C.liquidDeep);
 			ctx.lineWidth = 0.16;
 			ctx.stroke(b.path);
 		}
 		for (const b of blobs) {
 			this.planeAt(b.z);
+			ctx.globalAlpha = b.fade;
 			ctx.fillStyle = rgb(C.liquidMid);
 			ctx.fill(b.path);
 		}
 		ctx.fillStyle = rgb(C.liquidLight);
 		for (const b of blobs) {
 			this.planeAt(b.z);
+			ctx.globalAlpha = b.fade;
 			ctx.beginPath();
 			ctx.ellipse(
 				b.x + SUN_2D.x * b.r * 0.4,
@@ -919,14 +933,15 @@ export class Renderer {
 			);
 			ctx.fill();
 		}
+		ctx.globalAlpha = 1;
 	}
 
 	private drawSkids(particles: ParticlePool) {
 		const ctx = this.ctx;
 		ctx.lineWidth = 0.28;
 		for (const k of particles.skids) {
-			const a = k.strength * Math.min(1, (k.life / SKID_LIFE) * 2);
-			if (a < 0.2) continue;
+			const a = skidAlpha(k.life, SKID_LIFE, k.strength);
+			if (a < 0.05) continue;
 			this.planeAt(k.z);
 			ctx.strokeStyle = `rgba(42, 29, 20, ${a * 0.6})`;
 			ctx.beginPath();
@@ -1743,23 +1758,20 @@ export class Renderer {
 		ctx.lineWidth = 0.06 * this.s;
 		const puffs = [...particles.puffs].sort((a, b) => a.x + a.y - (b.x + b.y));
 		for (const p of puffs) {
-			const a = Math.max(0, p.life / p.maxLife);
+			const a = puffAlpha(p.life, p.maxLife);
+			if (a <= 0) continue;
+			const scale = puffScale(p.life, p.maxLife);
 			const rise = (1 - a) * 0.8;
 			const c = this.P(p.x, p.y, p.z + p.r + rise);
+			const rad = p.r * this.s * scale;
 			ctx.fillStyle = `rgba(232, 204, 150, ${a * 0.85})`;
 			ctx.strokeStyle = `rgba(120, 88, 52, ${a})`;
 			ctx.beginPath();
-			ctx.arc(c.x, c.y, p.r * this.s, 0, Math.PI * 2);
+			ctx.arc(c.x, c.y, rad, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.stroke();
 			ctx.beginPath();
-			ctx.arc(
-				c.x + p.r * this.s * 0.55,
-				c.y - p.r * this.s * 0.28,
-				p.r * this.s * 0.62,
-				0,
-				Math.PI * 2,
-			);
+			ctx.arc(c.x + rad * 0.55, c.y - rad * 0.28, rad * 0.62, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.stroke();
 		}
@@ -1776,12 +1788,12 @@ export class Renderer {
 			const t = 1 - p.life / maxLife;
 			const screen = this.P(p.x, p.y, 2);
 			const x = screen.x;
-			const y = screen.y - t * 46 * pr;
+			const y = screen.y - popupRise(p.life, maxLife, 46 * pr);
 			const size = (p.big ? 40 : 26) * pr * (t < 0.12 ? 0.6 + t * 3.3 : 1);
 			ctx.save();
 			ctx.translate(x, y);
 			ctx.rotate(-0.08);
-			ctx.globalAlpha = Math.min(1, p.life * 3);
+			ctx.globalAlpha = popupAlpha(p.life, maxLife);
 			ctx.font = `${size}px Bangers, Impact, 'Arial Black', sans-serif`;
 			ctx.lineWidth = 6 * pr;
 			ctx.strokeStyle = INK;
