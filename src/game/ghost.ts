@@ -28,19 +28,27 @@ export class GhostRunner {
 	private recording: ReplayRecording | null = null;
 	private track: Track | null = null;
 	private index = 0;
+	private _elapsed = 0;
 
 	load(recording: ReplayRecording | null) {
 		this.recording = recording;
 		this.index = 0;
+		this._elapsed = 0;
 	}
 
 	get active(): boolean {
 		return (this.recording?.frames.length ?? 0) > 0;
 	}
 
+	/** Sum of consumed replay frame dts. */
+	get elapsed(): number {
+		return this._elapsed;
+	}
+
 	reset(track: Track, cargo: CargoPreset, goo: GooFile | null) {
 		this.track = track;
 		this.index = 0;
+		this._elapsed = 0;
 		this.vehicle.reset(track);
 		if (goo) this.fluid.applyGoo(goo);
 		else {
@@ -53,6 +61,7 @@ export class GhostRunner {
 		const frames = this.recording?.frames;
 		if (!this.track || !frames || this.index >= frames.length) return;
 		const frame = frames[this.index++];
+		this._elapsed += frame.dt;
 		this.vehicle.step(frame.dt, frame.input, this.track, this.fluid);
 		this.fluid.step(frame.dt, this.vehicle.fluidFrame());
 	}

@@ -48,5 +48,6 @@ describe("ghost replay", () => {
 			max = Math.max(max, Math.hypot(g!.pos.x - p.x, g!.pos.y - p.y));
 		}
 		expect(max).toBeLessThan(2);
+		expect(ghost.elapsed).toBeCloseTo(frames.length / 120, 5);
 	});
 });

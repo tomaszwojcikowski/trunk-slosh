@@ -227,9 +227,9 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–25 are shipped on this line (v0.26.0). Next open work is **Phases 26–30** (mode stakes, checkpoint/contract UX, ghost split, pause overlay, retry + live announcements).
+Phases 0–30 are shipped on this line (v0.31.0).
 
-The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. The slosh band uses hysteresis so calm/moving/lip do not chatter. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
+The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time, plus a ghost split when a best is racing beside you. The slosh band uses hysteresis so calm/moving/lip do not chatter. Checkpoints pop. Contract and time-trial cargo bars warn before they fail. Pause opens a card. Spills and lip/danger edges announce to an aria-live region. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
 
 The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe and fade with life. Splats, skids, and spill popups soften before they leave. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
 
@@ -852,9 +852,9 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `modeBlurb(mode)` returning one sentence per `RunMode`. Unit-tested.
-- [ ] An intro element (e.g. `#intro-mode-blurb`) updates when the mode select changes and on first bind.
-- [ ] No change to abort floors, finish floors, or URL query encoding.
+- [x] `modeBlurb(mode)` returning one sentence per `RunMode`. Unit-tested.
+- [x] An intro element (e.g. `#intro-mode-blurb`) updates when the mode select changes and on first bind.
+- [x] No change to abort floors, finish floors, or URL query encoding.
 
 **Acceptance criteria**
 
@@ -882,10 +882,10 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `cargoThreatLevel(ratio, mode)` → `"ok" | "warn" | "danger"`. Contract warn above abort, danger at/under abort. Time trial warn near its finish floor. Practice keeps today’s ok/warn/bad bands or maps to the same three names.
-- [ ] On checkpoint index advance, add a popup naming the checkpoint. Cooldown or one popup per index so it does not spam.
-- [ ] HUD cargo bar uses `cargoThreatLevel` (or practice’s existing bands) every update.
-- [ ] Optional: one soft bus chirp on checkpoint; no new continuous layer.
+- [x] `cargoThreatLevel(ratio, mode)` → `"ok" | "warn" | "danger"`. Contract warn above abort, danger at/under abort. Time trial warn near its finish floor. Practice keeps today’s ok/warn/bad bands or maps to the same three names.
+- [x] On checkpoint index advance, add a popup naming the checkpoint. Cooldown or one popup per index so it does not spam.
+- [x] HUD cargo bar uses `cargoThreatLevel` (or practice’s existing bands) every update.
+- [x] Optional: one soft bus chirp on checkpoint; no new continuous layer.
 
 **Acceptance criteria**
 
@@ -913,9 +913,9 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `GhostRunner` exposes `elapsed` (sum of consumed frame dts). Reset clears it.
-- [ ] `ghostSplitLabel(playerElapsed, ghostElapsed, active)` → `null` or a short string like `−0.4s` / `+1.2s`. Unit-tested around zero and sign.
-- [ ] HUD slot (reuse ghost line or add `#hud-ghost-split`) updates while driving when a ghost is active.
+- [x] `GhostRunner` exposes `elapsed` (sum of consumed frame dts). Reset clears it.
+- [x] `ghostSplitLabel(playerElapsed, ghostElapsed, active)` → `null` or a short string like `−0.4s` / `+1.2s`. Unit-tested around zero and sign.
+- [x] HUD slot (reuse ghost line or add `#hud-ghost-split`) updates while driving when a ghost is active.
 
 **Acceptance criteria**
 
@@ -943,9 +943,9 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `#overlay-pause` markup and styles consistent with fail/result cards.
-- [ ] `togglePause` / blur still pause the sim; showing the overlay is part of the paused UI.
-- [ ] Buttons wire to resume, restart, and open-settings. Escape resumes when the pause overlay is up (and settings are closed).
+- [x] `#overlay-pause` markup and styles consistent with fail/result cards.
+- [x] `togglePause` / blur still pause the sim; showing the overlay is part of the paused UI.
+- [x] Buttons wire to resume, restart, and open-settings. Escape resumes when the pause overlay is up (and settings are closed).
 
 **Acceptance criteria**
 
@@ -973,10 +973,10 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] Result/fail button labels: primary “Retry this seed” (existing restart action). Keep “New track” as the alt.
-- [ ] `#hud-live` (or similar) with `aria-live="polite"` and `aria-atomic="true"`.
-- [ ] `liveAnnouncement({ spillLiters?, band?, threat? })` (or split helpers) returns a short string or null. Unit-tested.
-- [ ] Game writes the live region on spill popup windows, when HUD band becomes `lip`, and when contract threat becomes `danger` (once per rising edge).
+- [x] Result/fail button labels: primary “Retry this seed” (existing restart action). Keep “New track” as the alt.
+- [x] `#hud-live` (or similar) with `aria-live="polite"` and `aria-atomic="true"`.
+- [x] `liveAnnouncement({ spillLiters?, band?, threat? })` (or split helpers) returns a short string or null. Unit-tested.
+- [x] Game writes the live region on spill popup windows, when HUD band becomes `lip`, and when contract threat becomes `danger` (once per rising edge).
 
 **Acceptance criteria**
 
@@ -1015,7 +1015,7 @@ Items that do not block a single phase but should be picked up when touching nea
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–25 are done. Next open work is Phase 26.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–30 are done. New work starts after Phase 30.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
