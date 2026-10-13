@@ -40,10 +40,18 @@ export function truckInLowerHalf(truck: Vec2, cam: Vec2): boolean {
 	return truckScreenY(truck, cam) > 0;
 }
 
+/**
+ * Ease the chase toward the lookahead target. First step lands strictly between
+ * cam and target; repeated steps settle on the target. Does not move the chevron.
+ */
 export function followChase(cam: Vec2, target: Vec2, dt: number): Vec2 {
+	if (dt <= 0) return { x: cam.x, y: cam.y };
 	const k = 1 - 0.02 ** dt;
 	return {
 		x: cam.x + (target.x - cam.x) * k,
 		y: cam.y + (target.y - cam.y) * k,
 	};
 }
+
+/** Alias kept for phase-25 tests and callers that want the ease named explicitly. */
+export const easeChase = followChase;

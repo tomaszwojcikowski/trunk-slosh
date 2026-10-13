@@ -24,6 +24,11 @@ Create these in **Settings → Labels** (colors are suggestions):
 | `phase-18` | Grade and airborne reads, hints, and results |
 | `phase-19` | Difficulty scales the hill; medium stays put |
 | `phase-20` | Airborne mix: no rumble, no throttle load |
+| `phase-21` | Spring-damper visual pitch settle |
+| `phase-22` | Particle and skid fade curves |
+| `phase-23` | Master volume, soft mute, pause duck |
+| `phase-24` | Desert wind bed and material impacts |
+| `phase-25` | Chase ease and slosh-meter hysteresis |
 | `bug` | Incorrect behavior |
 | `feature` | New player-facing capability |
 | `physics/rendering` | Simulation or graphics pipeline |

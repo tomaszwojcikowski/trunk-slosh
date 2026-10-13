@@ -13,6 +13,7 @@ import {
 	type VehicleSnapshot,
 } from "../physics/VehicleSimulation";
 import { applyVehiclePreset } from "../physics/vehiclePresets";
+import { settlePitch } from "../physics/wheelPitch";
 import { decayPunch, decayShake, punchZoom } from "../render/cameraMotion";
 import { chasePoint, followChase } from "../render/chaseCamera";
 import {
@@ -64,7 +65,12 @@ import {
 	saveSettings,
 } from "./settings";
 import { deliverShareCard, paintShareCard } from "./shareCard";
-import { sloshFill, sloshLevel } from "./sloshMeter";
+import {
+	nextSloshBand,
+	type SloshBand,
+	sloshFill,
+	sloshLevel,
+} from "./sloshMeter";
 import { nextTutorialHint, tutorialMessage } from "./tutorials";
 
 const FIXED_DT = 1 / 120;
@@ -173,6 +179,8 @@ export class Game {
 	private paused = false;
 	private punch = 0;
 	private lastSpillVol = 0;
+	private pitchSettle = { pitch: 0, velocity: 0 };
+	private hudSloshBand: SloshBand = "calm";
 	constructor(
 		canvas: HTMLCanvasElement,
 		isoCanvas: HTMLCanvasElement,
@@ -264,6 +272,7 @@ export class Game {
 		window.addEventListener("blur", () => {
 			this.paused = true;
 			this.audio.idle();
+			this.syncAudioDuck();
 			this.syncPauseUi();
 		});
 		this.bindIntroControls(root);
@@ -333,10 +342,18 @@ export class Game {
 	private applySettingsToRuntime() {
 		this.inkEnabled = this.settings.ink;
 		this.audio.enabled = this.settings.sfx;
+		this.audio.volume = this.settings.masterVolume;
 		this.input.keyboardRampMul = this.settings.keyboardRamp;
 		this.input.touchSensitivityMul = this.settings.touchSensitivity;
 		this.hud.ink.textContent = this.inkEnabled ? "Ink: on" : "Ink: off";
 		this.trunkIso.visible = true;
+		this.syncAudioDuck();
+	}
+
+	private syncAudioDuck() {
+		const duck =
+			this.paused || this.phase === "finished" || this.phase === "failed";
+		this.audio.setDucked(duck);
 	}
 
 	private bindIntroControls(root: HTMLElement) {
@@ -380,6 +397,7 @@ export class Game {
 	private bindSettings(root: HTMLElement) {
 		const ink = root.querySelector<HTMLInputElement>("#set-ink")!;
 		const sfx = root.querySelector<HTMLInputElement>("#set-sfx")!;
+		const volume = root.querySelector<HTMLInputElement>("#set-volume")!;
 		const motion = root.querySelector<HTMLInputElement>("#set-motion")!;
 		const punch = root.querySelector<HTMLInputElement>("#set-punch")!;
 		const quality = root.querySelector<HTMLSelectElement>("#set-quality")!;
@@ -389,6 +407,7 @@ export class Game {
 		const sync = () => {
 			ink.checked = this.settings.ink;
 			sfx.checked = this.settings.sfx;
+			volume.value = String(this.settings.masterVolume);
 			motion.checked = this.settings.reducedMotion;
 			punch.checked = this.settings.cameraPunch;
 			quality.value = this.settings.quality;
@@ -467,6 +486,7 @@ export class Game {
 		const save = () => {
 			this.settings.ink = ink.checked;
 			this.settings.sfx = sfx.checked;
+			this.settings.masterVolume = Number(volume.value);
 			this.settings.reducedMotion = motion.checked;
 			this.settings.cameraPunch = punch.checked;
 			this.settings.quality = quality.value as GameSettings["quality"];
@@ -481,8 +501,19 @@ export class Game {
 				this.settings.useFluidWorker,
 			);
 		};
-		for (const el of [ink, sfx, motion, punch, quality, worker, touch, ramp])
+		for (const el of [
+			ink,
+			sfx,
+			volume,
+			motion,
+			punch,
+			quality,
+			worker,
+			touch,
+			ramp,
+		])
 			el.addEventListener("change", save);
+		volume.addEventListener("input", save);
 		sync();
 	}
 
@@ -496,6 +527,7 @@ export class Game {
 		if (this.phase !== "driving") return;
 		this.paused = !this.paused;
 		if (this.paused) this.audio.idle();
+		this.syncAudioDuck();
 		this.syncPauseUi();
 	}
 
@@ -650,6 +682,8 @@ export class Game {
 		this.accum = 0;
 		this.shake = 0;
 		this.punch = 0;
+		this.pitchSettle = { pitch: 0, velocity: 0 };
+		this.hudSloshBand = "calm";
 		this.spillWindow = 0;
 		this.lastSpillVol = this.fluid.spilledVolume;
 		this.lastWheel = [null, null, null, null];
@@ -663,6 +697,7 @@ export class Game {
 		this.hud.result.hidden = true;
 		this.hud.fail.hidden = true;
 		this.hud.tutorial.hidden = true;
+		this.syncAudioDuck();
 		this.syncPauseUi();
 		this.syncSeedHud();
 	}
@@ -700,6 +735,7 @@ export class Game {
 	private simulate(dt: number) {
 		if (this.paused && this.phase === "driving") {
 			this.audio.idle();
+			this.syncAudioDuck();
 			return;
 		}
 
@@ -791,6 +827,7 @@ export class Game {
 		this.phase = "failed";
 		this.hud.fail.querySelector("p")!.textContent = reason;
 		this.hud.fail.hidden = false;
+		this.syncAudioDuck();
 	}
 
 	private showTutorialHint(
@@ -898,7 +935,7 @@ export class Game {
 		});
 		if (snap.impact > 25 && !this.settings.reducedMotion)
 			this.shake = Math.min(1, this.shake + snap.impact / 120);
-		this.audio.impactThud(snap.impact);
+		this.audio.impactThud(snap.impact, snap.impactKind);
 		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
 		this.audio.tireScrub(skid);
 		const sandy = snap.wheels.filter((w) => w.sand).length >= 2;
@@ -910,7 +947,15 @@ export class Game {
 			snap.airborne,
 		);
 		this.audio.surfaceRoll(snap.airborne ? 0 : snap.speed, sandy);
+		this.audio.surfaceWind(snap.speed, snap.airborne);
 		this.audio.engineLoad(snap.speed, mix.throttle);
+		this.pitchSettle = settlePitch(
+			this.pitchSettle.pitch,
+			this.pitchSettle.velocity,
+			snap.pitch,
+			dt,
+			this.settings.reducedMotion,
+		);
 	}
 
 	private updateCamera(frameDt: number, snap: VehicleSnapshot) {
@@ -1005,6 +1050,7 @@ export class Game {
 			this.hud.result.hidden = false;
 			this.hud.resultGrade.classList.add("grade-stamp");
 			this.particles.addPopup(snap.pos.x, snap.pos.y - 3, "DELIVERED!", true);
+			this.syncAudioDuck();
 			this.audio.finishSting();
 		}
 	}
@@ -1042,7 +1088,8 @@ export class Game {
 		);
 		this.setText(this.hud.air, airborneLabel(snap.airborne));
 		const slosh = this.fluid.sloshSpeed();
-		const band = sloshLevel(slosh);
+		this.hudSloshBand = nextSloshBand(this.hudSloshBand, slosh);
+		const band = this.hudSloshBand;
 		this.setText(this.hud.slosh, band);
 		const fill = `${(sloshFill(slosh) * 100).toFixed(0)}%`;
 		if (this.hudCache.get(this.hud.sloshBar) !== `${band}:${fill}`) {
@@ -1067,7 +1114,11 @@ export class Game {
 		if (steps === MAX_STEPS) this.accum = 0;
 
 		const snap = this.vehicle.snapshot(this.fluid.mass());
-		this.updateCamera(frameDt, snap);
+		const drawSnap: VehicleSnapshot = {
+			...snap,
+			pitch: this.pitchSettle.pitch,
+		};
+		this.updateCamera(frameDt, drawSnap);
 
 		const shakeAmp = this.shake * 0.35;
 		const cam: Camera = {
@@ -1078,7 +1129,7 @@ export class Game {
 		const ghostSnap = this.ghost.snapshot();
 		this.renderer.draw({
 			track: this.track,
-			car: snap,
+			car: drawSnap,
 			fluid: this.fluid,
 			ghost: ghostSnap
 				? { car: ghostSnap, fluid: this.ghost.fluid }
