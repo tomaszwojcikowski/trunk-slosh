@@ -1,5 +1,7 @@
 /** Web Audio mix. The context is created only inside a user gesture. */
 
+import { impactVoiceFor, windGainFor } from "./windVoice";
+
 /** Loud enough to read as an engine on laptop speakers, silent when parked. */
 /** Silent under the collision threshold; otherwise a short thud, capped. */
 export function impactGainFor(impact: number): number {
@@ -36,11 +38,43 @@ export function rollGainFor(speed: number, sand: boolean): number {
 	return sand ? base * 1.65 : base;
 }
 
+/** Master gain from the settings slider. Today's bus peak lived at 0.8. */
+export function masterGainFor(volume: number): number {
+	return Math.max(0, Math.min(1, volume)) * 0.8;
+}
+
+/**
+ * Soft mute ramp. Never cancel+snap to zero — that clicks when SFX toggles.
+ * Returns the target the param should ease toward.
+ */
+export function softMuteTarget(enabled: boolean, volume: number): number {
+	if (!enabled) return 0;
+	return masterGainFor(volume);
+}
+
+type GainParam = {
+	cancelScheduledValues(t: number): void;
+	setValueAtTime(v: number, t: number): void;
+	setTargetAtTime(v: number, t: number, c: number): void;
+	value: number;
+};
+
+/** Ease a gain without a one-frame full-level spike. */
+export function softGainRamp(
+	param: GainParam,
+	target: number,
+	t: number,
+	timeConstant = 0.06,
+) {
+	param.setTargetAtTime(Math.max(0, target), t, timeConstant);
+}
+
 type Loop = { filter: BiquadFilterNode; gain: GainNode };
 
 export class AudioBus {
 	private ctx: AudioContext | null = null;
 	private master: GainNode | null = null;
+	private duck: GainNode | null = null;
 	private engine: OscillatorNode | null = null;
 	private engineBody: OscillatorNode | null = null;
 	private engineHarmonic: OscillatorNode | null = null;
@@ -54,9 +88,12 @@ export class AudioBus {
 	private exhaust: Loop | null = null;
 	private roll: Loop | null = null;
 	private slosh: Loop | null = null;
+	private wind: Loop | null = null;
 	private noise: AudioBuffer | null = null;
 	private armed = false;
 	private _enabled = true;
+	private _volume = 1;
+	private _ducked = false;
 	private lastSplash = -1;
 	private lastImpact = -1;
 	private lastSlosh = -1;
@@ -68,13 +105,24 @@ export class AudioBus {
 
 	set enabled(value: boolean) {
 		this._enabled = value;
+		this.applyMaster();
 		if (!value) this.silence();
+	}
+
+	get volume() {
+		return this._volume;
+	}
+
+	set volume(value: number) {
+		this._volume = Math.max(0, Math.min(1, value));
+		this.applyMaster();
 	}
 
 	/** Call from a pointer or key event so the browser allows playback. */
 	unlock() {
 		this.armed = true;
 		this.create();
+		this.applyMaster();
 		if (!this._enabled) {
 			this.silence();
 			return;
@@ -88,10 +136,19 @@ export class AudioBus {
 		}
 	}
 
+	/** Duck continuous layers on pause/results. One-shots still route to master. */
+	setDucked(ducked: boolean) {
+		this._ducked = ducked;
+		const ctx = this.ctx;
+		if (!ctx || !this.duck) return;
+		softGainRamp(this.duck.gain, ducked ? 0 : 1, ctx.currentTime, 0.08);
+	}
+
 	idle() {
 		this.engineLoad(0, 0);
 		this.tireScrub(0);
 		this.surfaceRoll(0, false);
+		this.surfaceWind(0, false);
 		this.sloshTick(0);
 	}
 
@@ -119,16 +176,20 @@ export class AudioBus {
 			t,
 			0.08,
 		);
-		this.engineGain.gain.setTargetAtTime(gain, t, 0.05);
-		this.bodyGain?.gain.setTargetAtTime(gain > 0 ? 0.45 : 0, t, 0.05);
-		this.harmonicGain?.gain.setTargetAtTime(gain * 0.22, t, 0.05);
-		this.subGain?.gain.setTargetAtTime(gain * 0.55, t, 0.06);
+		softGainRamp(this.engineGain.gain, gain, t, 0.05);
+		if (this.bodyGain)
+			softGainRamp(this.bodyGain.gain, gain > 0 ? 0.45 : 0, t, 0.05);
+		if (this.harmonicGain)
+			softGainRamp(this.harmonicGain.gain, gain * 0.22, t, 0.05);
+		if (this.subGain) softGainRamp(this.subGain.gain, gain * 0.55, t, 0.06);
 		this.exhaust?.filter.frequency.setTargetAtTime(160 + drive * 220, t, 0.05);
-		this.exhaust?.gain.gain.setTargetAtTime(
-			Math.min(0.1, gain * (0.25 + drive * 0.45)),
-			t,
-			0.05,
-		);
+		if (this.exhaust)
+			softGainRamp(
+				this.exhaust.gain.gain,
+				Math.min(0.1, gain * (0.25 + drive * 0.45)),
+				t,
+				0.05,
+			);
 	}
 
 	tireScrub(amount: number) {
@@ -137,7 +198,7 @@ export class AudioBus {
 		const t = ctx.currentTime;
 		const scrub = amount < 0.2 ? 0 : Math.min(1, amount);
 		this.scrub.filter.frequency.setTargetAtTime(700 + scrub * 900, t, 0.03);
-		this.scrub.gain.gain.setTargetAtTime(scrub * 0.22, t, 0.03);
+		softGainRamp(this.scrub.gain.gain, scrub * 0.22, t, 0.03);
 	}
 
 	/** Continuous contact rumble. Call with the current speed every step so it decays. */
@@ -146,10 +207,23 @@ export class AudioBus {
 		if (!ctx || !this.roll) return;
 		const t = ctx.currentTime;
 		this.roll.filter.frequency.setTargetAtTime(sand ? 420 : 980, t, 0.08);
-		this.roll.gain.gain.setTargetAtTime(rollGainFor(speed, sand), t, 0.08);
+		softGainRamp(this.roll.gain.gain, rollGainFor(speed, sand), t, 0.08);
 	}
 
-	impactThud(impact: number) {
+	/** Desert wind bed. Separate from roll; thinner in the air. */
+	surfaceWind(speed: number, airborne: boolean) {
+		const ctx = this.ensure();
+		if (!ctx || !this.wind) return;
+		const t = ctx.currentTime;
+		this.wind.filter.frequency.setTargetAtTime(
+			airborne ? 1400 : 900 + Math.min(speed, 40) * 12,
+			t,
+			0.1,
+		);
+		softGainRamp(this.wind.gain.gain, windGainFor(speed, airborne), t, 0.1);
+	}
+
+	impactThud(impact: number, kind?: string | null) {
 		const gain = impactGainFor(impact);
 		if (gain <= 0) return;
 		const ctx = this.ensure();
@@ -157,7 +231,16 @@ export class AudioBus {
 		const t = ctx.currentTime;
 		if (t - this.lastImpact < 0.12) return;
 		this.lastImpact = t;
-		this.tone(ctx, 68, 0.1, gain, t, "sine");
+		const voice = impactVoiceFor(kind);
+		this.tone(ctx, voice.freq, 0.1, gain, t, "sine");
+		if (voice.filter)
+			this.burst(
+				ctx,
+				voice.filter,
+				0.08,
+				Math.min(0.1, gain * 0.35),
+				"bandpass",
+			);
 	}
 
 	spillSplash(liters: number) {
@@ -192,7 +275,7 @@ export class AudioBus {
 			t,
 			0.12,
 		);
-		this.slosh.gain.gain.setTargetAtTime(gain, t, 0.1);
+		softGainRamp(this.slosh.gain.gain, gain, t, 0.1);
 	}
 
 	/** One short tone at the lip or on a spill. Calm frames start nothing. */
@@ -204,6 +287,19 @@ export class AudioBus {
 		if (t - this.lastSlosh < 0.2) return;
 		this.lastSlosh = t;
 		this.tone(ctx, 168, 0.07, gain, t, "sine");
+	}
+
+	private applyMaster() {
+		const ctx = this.ctx;
+		if (!ctx || !this.master) return;
+		softGainRamp(
+			this.master.gain,
+			softMuteTarget(this._enabled, this._volume),
+			ctx.currentTime,
+			0.05,
+		);
+		if (this.duck)
+			softGainRamp(this.duck.gain, this._ducked ? 0 : 1, ctx.currentTime, 0.08);
 	}
 
 	private silence() {
@@ -219,11 +315,11 @@ export class AudioBus {
 			this.exhaust?.gain,
 			this.roll?.gain,
 			this.slosh?.gain,
+			this.wind?.gain,
 		];
 		for (const node of nodes) {
 			if (!node) continue;
-			node.gain.cancelScheduledValues(t);
-			node.gain.setValueAtTime(0, t);
+			softGainRamp(node.gain, 0, t, 0.05);
 		}
 	}
 
@@ -239,9 +335,22 @@ export class AudioBus {
 		const ctx = new AudioContext();
 		this.ctx = ctx;
 		const master = ctx.createGain();
-		master.gain.value = 0.8;
-		master.connect(ctx.destination);
+		master.gain.value = masterGainFor(this._volume);
 		this.master = master;
+
+		const compressor = ctx.createDynamicsCompressor();
+		compressor.threshold.value = -18;
+		compressor.knee.value = 12;
+		compressor.ratio.value = 3;
+		compressor.attack.value = 0.003;
+		compressor.release.value = 0.12;
+		compressor.connect(ctx.destination);
+		master.connect(compressor);
+
+		const duck = ctx.createGain();
+		duck.gain.value = this._ducked ? 0 : 1;
+		duck.connect(master);
+		this.duck = duck;
 
 		const filter = ctx.createBiquadFilter();
 		filter.type = "lowpass";
@@ -250,7 +359,7 @@ export class AudioBus {
 		const engineGain = ctx.createGain();
 		engineGain.gain.value = 0;
 		filter.connect(engineGain);
-		engineGain.connect(master);
+		engineGain.connect(duck);
 		this.engineFilter = filter;
 		this.engineGain = engineGain;
 
@@ -263,20 +372,21 @@ export class AudioBus {
 
 		const harmonicGain = ctx.createGain();
 		harmonicGain.gain.value = 0;
-		harmonicGain.connect(master);
+		harmonicGain.connect(duck);
 		this.harmonicGain = harmonicGain;
 		this.engineHarmonic = this.osc(ctx, "triangle", 110, harmonicGain);
 
 		const subGain = ctx.createGain();
 		subGain.gain.value = 0;
-		subGain.connect(master);
+		subGain.connect(duck);
 		this.subGain = subGain;
 		this.engineSub = this.osc(ctx, "sine", 28, subGain);
 
-		this.scrub = this.loop(ctx, master, "bandpass", 900, 0.8);
-		this.exhaust = this.loop(ctx, master, "bandpass", 180, 0.7);
-		this.roll = this.loop(ctx, master, "lowpass", 900, 0.4);
-		this.slosh = this.loop(ctx, master, "lowpass", 160, 0.5);
+		this.scrub = this.loop(ctx, duck, "bandpass", 900, 0.8);
+		this.exhaust = this.loop(ctx, duck, "bandpass", 180, 0.7);
+		this.roll = this.loop(ctx, duck, "lowpass", 900, 0.4);
+		this.slosh = this.loop(ctx, duck, "lowpass", 160, 0.5);
+		this.wind = this.loop(ctx, duck, "bandpass", 1100, 0.35);
 	}
 
 	private osc(
@@ -295,7 +405,7 @@ export class AudioBus {
 
 	private loop(
 		ctx: AudioContext,
-		master: GainNode,
+		dest: AudioNode,
 		type: BiquadFilterType,
 		freq: number,
 		q: number,
@@ -311,7 +421,7 @@ export class AudioBus {
 		src.loop = true;
 		src.connect(filter);
 		filter.connect(gain);
-		gain.connect(master);
+		gain.connect(dest);
 		src.start();
 		return { filter, gain };
 	}

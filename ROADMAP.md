@@ -227,13 +227,13 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–20 are shipped on this line (v0.21.0). Next open work is **Phases 21–25** (animation settle, particle fades, mixer, wind/materials, chase and meter ease).
+Phases 0–25 are shipped on this line (v0.26.0).
 
-The main view is true isometric. The chase frame holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab pitches under braking, and a short truck draws the short axles. A hard hit plays an impact thud.
+The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time. The slosh band uses hysteresis so calm/moving/lip do not chatter. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
 
-The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
+The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe and fade with life. Splats, skids, and spill popups soften before they leave. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
 
-The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Rumble goes quiet in the air and the engine drops the throttle term. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
+The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, desert wind, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Master volume lives in Settings; mute and pause duck continuous layers without zipper clicks. Rumble goes quiet in the air and the engine drops the throttle term; wind thins in the air. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
 
 ---
 
@@ -693,9 +693,9 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] A pure `settlePitch(current, target, dt, …)` (or equivalent) with unit-tested stiffness and damping. Zero target decays toward level.
-- [ ] The renderer (or the snapshot consumer) uses the settled pitch for body, hood, and cab lift. The tub opening still ignores pitch.
-- [ ] Reduced motion skips overshoot: pitch tracks the target without a spring, or holds the undamped value. Shake and spill punch rules stay as they are.
+- [x] A pure `settlePitch(current, target, dt, …)` (or equivalent) with unit-tested stiffness and damping. Zero target decays toward level.
+- [x] The renderer (or the snapshot consumer) uses the settled pitch for body, hood, and cab lift. The tub opening still ignores pitch.
+- [x] Reduced motion skips overshoot: pitch tracks the target without a spring, or holds the undamped value. Shake and spill punch rules stay as they are.
 
 **Acceptance criteria**
 
@@ -724,9 +724,9 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] Pure helpers for puff scale/alpha, splat alpha, skid alpha, and popup offset/alpha from life (and `maxLife` where it exists). Unit-tested at full life, mid life, and zero.
-- [ ] The isometric draw path uses those helpers. Droplet streaks from Phase 16 stay velocity-capped.
-- [ ] Pool caps and lifetimes (`SPLAT_LIFE`, `SKID_LIFE`, puff `maxLife`) stay unless a test proves a pop. Volume conservation is unchanged.
+- [x] Pure helpers for puff scale/alpha, splat alpha, skid alpha, and popup offset/alpha from life (and `maxLife` where it exists). Unit-tested at full life, mid life, and zero.
+- [x] The isometric draw path uses those helpers. Droplet streaks from Phase 16 stay velocity-capped.
+- [x] Pool caps and lifetimes (`SPLAT_LIFE`, `SKID_LIFE`, puff `maxLife`) stay unless a test proves a pop. Volume conservation is unchanged.
 
 **Acceptance criteria**
 
@@ -755,10 +755,10 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `settings.masterVolume` (0…1, default near today’s fixed master). The bus applies it on the master gain every step the mix runs.
-- [ ] Soft mute: SFX off and `idle()` ramp continuous gains toward 0 with `setTargetAtTime` (or equivalent). No `cancelScheduledValues` snap to 0 on the audible path.
-- [ ] Duck engine, exhaust, roll, scrub, and slosh while paused or on the results overlay. Finish sting and impact thud still play when SFX is on.
-- [ ] Optional: a DynamicsCompressorNode on the master so stacked layers do not clip on laptop speakers. Caps from Phase 15 stay as a backstop.
+- [x] `settings.masterVolume` (0…1, default near today’s fixed master). The bus applies it on the master gain every step the mix runs.
+- [x] Soft mute: SFX off and `idle()` ramp continuous gains toward 0 with `setTargetAtTime` (or equivalent). No `cancelScheduledValues` snap to 0 on the audible path.
+- [x] Duck engine, exhaust, roll, scrub, and slosh while paused or on the results overlay. Finish sting and impact thud still play when SFX is on.
+- [x] Optional: a DynamicsCompressorNode on the master so stacked layers do not clip on laptop speakers. Caps from Phase 15 stay as a backstop.
 
 **Acceptance criteria**
 
@@ -787,10 +787,10 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] `windGainFor(speed, airborne)` (pure). Zero below a speed floor. Airborne uses a reduced curve. Unit-tested.
-- [ ] A continuous wind loop on the bus, updated every step like roll and scrub, including with gain 0.
-- [ ] `impactVoiceFor(kind)` (or pitch/filter pair) for `rock` | `cactus` | `barrel` | `tires`, plus a default. The game passes kind from the collision when available.
-- [ ] Phase 20 airborne mix still zeroes roll and drops throttle load. Wind is separate and follows its own airborne rule.
+- [x] `windGainFor(speed, airborne)` (pure). Zero below a speed floor. Airborne uses a reduced curve. Unit-tested.
+- [x] A continuous wind loop on the bus, updated every step like roll and scrub, including with gain 0.
+- [x] `impactVoiceFor(kind)` (or pitch/filter pair) for `rock` | `cactus` | `barrel` | `tires`, plus a default. The game passes kind from the collision when available.
+- [x] Phase 20 airborne mix still zeroes roll and drops throttle load. Wind is separate and follows its own airborne rule.
 
 **Acceptance criteria**
 
@@ -819,10 +819,10 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [ ] A pure chase ease step (position and/or lookahead blend) with unit tests for a step input and a settle-to-target.
-- [ ] Slosh band hysteresis: enter “lip” and “moving” at the current thresholds; leave at slightly lower ones, or hold a band for a minimum time. Unit-tested.
-- [ ] Golden `?demo=` frame check still places the truck in the lower half after ease settles.
-- [ ] No change to fluid thresholds that drive spill or the lip accent. The accent still keys off the real lip/spill signals from Phase 15.
+- [x] A pure chase ease step (position and/or lookahead blend) with unit tests for a step input and a settle-to-target.
+- [x] Slosh band hysteresis: enter “lip” and “moving” at the current thresholds; leave at slightly lower ones, or hold a band for a minimum time. Unit-tested.
+- [x] Golden `?demo=` frame check still places the truck in the lower half after ease settles.
+- [x] No change to fluid thresholds that drive spill or the lip accent. The accent still keys off the real lip/spill signals from Phase 15.
 
 **Acceptance criteria**
 
@@ -860,7 +860,7 @@ Items that do not block a single phase but should be picked up when touching nea
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–20 are done. Next open work is Phase 21.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–25 are done. New work starts after Phase 25.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.

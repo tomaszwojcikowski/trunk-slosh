@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Track } from "../world/Track";
 import { bendTarget } from "./bendAim";
-import { sloshLevel } from "./sloshMeter";
+import { nextSloshBand, sloshLevel } from "./sloshMeter";
 
 describe("slosh meter", () => {
 	it("bands slosh speed into calm, moving, and at the lip", () => {
@@ -11,6 +11,22 @@ describe("slosh meter", () => {
 		expect(sloshLevel(0.349)).toBe("moving");
 		expect(sloshLevel(0.35)).toBe("lip");
 		expect(sloshLevel(1.2)).toBe("lip");
+	});
+
+	it("holds the HUD band across a chattering calm/moving boundary", () => {
+		let band = nextSloshBand("calm", 0.08);
+		expect(band).toBe("moving");
+		const chatter = [0.07, 0.09, 0.06, 0.085, 0.055, 0.09];
+		const flips: string[] = [band];
+		for (const speed of chatter) {
+			band = nextSloshBand(band, speed);
+			flips.push(band);
+		}
+		// Exit is 0.05, so 0.055–0.09 stay moving; only a dip below exit drops to calm.
+		expect(flips.every((b) => b === "moving")).toBe(true);
+		expect(nextSloshBand("moving", 0.04)).toBe("calm");
+		expect(nextSloshBand("lip", 0.32)).toBe("lip");
+		expect(nextSloshBand("lip", 0.29)).toBe("moving");
 	});
 });
 

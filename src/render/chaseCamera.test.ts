@@ -6,6 +6,7 @@ import { Track } from "../world/Track";
 import { decayPunch, decayShake } from "./cameraMotion";
 import {
 	chasePoint,
+	easeChase,
 	followChase,
 	truckInLowerHalf,
 	truckScreenY,
@@ -71,5 +72,22 @@ describe("reduced motion", () => {
 		expect(decayPunch(0.6, 1 / 60, true, true)).toBe(0);
 		expect(decayShake(0.8, 1 / 60, false)).toBeGreaterThan(0);
 		expect(decayShake(0.8, 1 / 60, false)).toBeLessThan(0.8);
+	});
+});
+
+describe("chase ease", () => {
+	it("lands between cam and target on the first step, then settles", () => {
+		const cam = { x: 0, y: 0 };
+		const target = { x: 10, y: -4 };
+		const dt = 1 / 60;
+		const step = easeChase(cam, target, dt);
+		expect(step.x).toBeGreaterThan(cam.x);
+		expect(step.x).toBeLessThan(target.x);
+		expect(step.y).toBeLessThan(cam.y);
+		expect(step.y).toBeGreaterThan(target.y);
+		let cur = cam;
+		for (let i = 0; i < 240; i++) cur = followChase(cur, target, dt);
+		expect(cur.x).toBeCloseTo(target.x, 2);
+		expect(cur.y).toBeCloseTo(target.y, 2);
 	});
 });

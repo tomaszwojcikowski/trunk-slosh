@@ -3,11 +3,13 @@ import Matter from "matter-js";
 const { Events } = Matter;
 
 import { rotate, type Vec2 } from "../math/vec2";
-import type { Track } from "../world/Track";
+import type { ObstacleKind, Track } from "../world/Track";
 import type { FluidFrame, FluidLayer } from "./FluidLayer";
 import { TRUNK_LOCAL } from "./trunkConstants";
 import { stepVertical, type VerticalState } from "./vertical";
 import { advanceWheelAngle, pitchFromLongAccel } from "./wheelPitch";
+
+const HIT_KINDS = new Set<string>(["rock", "cactus", "barrel", "tires"]);
 
 export { TRUNK_LOCAL };
 
@@ -73,6 +75,8 @@ export type VehicleSnapshot = {
 	wheels: WheelInfo[];
 	/** Collision-induced acceleration this step (m/s²) */
 	impact: number;
+	/** Prop kind that produced the latest chassis contact, if known. */
+	impactKind: ObstacleKind | null;
 	/** Chassis height above z = 0 (m). Follows the road, then ballistic on a ramp. */
 	z: number;
 	pitch: number;
@@ -101,6 +105,7 @@ export class VehicleSimulation {
 	private alpha = 0;
 	private gSmooth = 0;
 	private impact = 0;
+	private impactKind: ObstacleKind | null = null;
 	private onRoad = true;
 	private vertical: VerticalState = {
 		z: 0,
@@ -150,6 +155,7 @@ export class VehicleSimulation {
 		this.alpha = 0;
 		this.gSmooth = 0;
 		this.impact = 0;
+		this.impactKind = null;
 		this.wheelAngle = 0;
 		const along = track.query(track.start).along;
 		this.vertical = {
@@ -175,6 +181,7 @@ export class VehicleSimulation {
 			if (!labels.includes("chassis")) continue;
 			const other =
 				pair.bodyA.label === "chassis" ? pair.bodyB.label : pair.bodyA.label;
+			if (HIT_KINDS.has(other)) this.impactKind = other as ObstacleKind;
 			if (other === "cactus") {
 				const v = Body.getVelocity(this.chassis);
 				Body.setVelocity(this.chassis, { x: v.x * 0.82, y: v.y * 0.82 });
@@ -259,6 +266,7 @@ export class VehicleSimulation {
 	}
 
 	step(dt: number, input: DriveInput, track: Track, fluid: FluidLayer) {
+		this.impactKind = null;
 		const s = this.spec;
 		const c = this.chassis;
 		const angle = c.angle;
@@ -517,6 +525,7 @@ export class VehicleSimulation {
 				sand: w.sand,
 			})),
 			impact: this.impact,
+			impactKind: this.impactKind,
 			z: this.vertical.z,
 			pitch: pitchFromLongAccel(this.accelLocal.x),
 			wheelAngle: this.wheelAngle,
