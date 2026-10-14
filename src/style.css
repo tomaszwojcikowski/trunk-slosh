@@ -291,10 +291,41 @@ body,
 
 #overlay-settings,
 #overlay-result,
-#overlay-fail {
+#overlay-fail,
+#overlay-pause {
 	z-index: 30;
 	overflow: auto;
 	align-items: safe center;
+}
+
+.hud-live {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.intro-mode-blurb {
+	margin: 8px 0 4px;
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.35;
+	color: #3a2a1c;
+}
+
+#hud-ghost-split {
+	margin-left: 6px;
+	color: #2f6f8f;
+	font-variant-numeric: tabular-nums;
+}
+
+.pause-card .title {
+	color: #2f6f8f;
 }
 
 .achieve-label {

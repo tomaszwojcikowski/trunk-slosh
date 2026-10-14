@@ -264,6 +264,14 @@ export class AudioBus {
 		this.tone(ctx, 784, 0.24, 0.16, ctx.currentTime + 0.09);
 	}
 
+	/** Soft one-shot when a checkpoint index advances. */
+	checkpointChirp() {
+		const ctx = this.ensure();
+		if (!ctx) return;
+		this.tone(ctx, 660, 0.08, 0.1, ctx.currentTime, "triangle");
+		this.tone(ctx, 880, 0.1, 0.08, ctx.currentTime + 0.06, "triangle");
+	}
+
 	/** Continuous slosh bed. Energy below the threshold fades it out. */
 	sloshTick(energy: number, cutoff = 140) {
 		const ctx = this.ensure();

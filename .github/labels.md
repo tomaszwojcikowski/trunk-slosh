@@ -29,6 +29,11 @@ Create these in **Settings → Labels** (colors are suggestions):
 | `phase-23` | Master volume, soft mute, pause duck |
 | `phase-24` | Desert wind bed and material impacts |
 | `phase-25` | Chase ease and slosh-meter hysteresis |
+| `phase-26` | Mode stakes blurb on the intro |
+| `phase-27` | Checkpoint popup and contract cargo threat |
+| `phase-28` | Ghost time-split on the HUD |
+| `phase-29` | Full pause overlay with resume paths |
+| `phase-30` | Retry-this-seed CTA and aria-live spills |
 | `bug` | Incorrect behavior |
 | `feature` | New player-facing capability |
 | `physics/rendering` | Simulation or graphics pipeline |

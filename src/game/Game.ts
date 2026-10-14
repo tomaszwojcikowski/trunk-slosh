@@ -30,8 +30,10 @@ import {
 	unlockAchievements,
 } from "./achievements";
 import { bendTarget } from "./bendAim";
+import { type CargoThreat, cargoThreatLevel } from "./cargoThreat";
 import { demoDrive } from "./demoDrive";
 import { GhostRunner, ghostMatches } from "./ghost";
+import { ghostSplitLabel } from "./ghostSplit";
 import {
 	exportGooJson,
 	type GooFile,
@@ -42,6 +44,8 @@ import {
 } from "./goo";
 import { airborneLabel, gradeLabel } from "./gradeRead";
 import { DISCUSSIONS_URL, scoreBlurb } from "./leaderboard";
+import { liveAnnouncement } from "./liveAnnounce";
+import { modeBlurb } from "./modeBlurb";
 import {
 	loadGhostRecording,
 	maybeSaveBest,
@@ -105,8 +109,12 @@ type Hud = {
 	resultAchievements: HTMLElement;
 	introSeed: HTMLElement;
 	ghost: HTMLElement;
+	ghostSplit: HTMLElement;
+	live: HTMLElement;
 	tutorial: HTMLElement;
 	settingsPanel: HTMLElement;
+	pausePanel: HTMLElement;
+	modeBlurb: HTMLElement;
 	ink: HTMLElement;
 	trunkIso: HTMLElement;
 	pauseBtn: HTMLElement;
@@ -181,6 +189,7 @@ export class Game {
 	private lastSpillVol = 0;
 	private pitchSettle = { pitch: 0, velocity: 0 };
 	private hudSloshBand: SloshBand = "calm";
+	private cargoThreat: CargoThreat = "ok";
 	constructor(
 		canvas: HTMLCanvasElement,
 		isoCanvas: HTMLCanvasElement,
@@ -227,8 +236,12 @@ export class Game {
 			resultAchievements: root.querySelector("#result-achievements")!,
 			introSeed: root.querySelector("#intro-seed")!,
 			ghost: root.querySelector("#hud-ghost")!,
+			ghostSplit: root.querySelector("#hud-ghost-split")!,
+			live: root.querySelector("#hud-live")!,
 			tutorial: root.querySelector("#tutorial-toast")!,
 			settingsPanel: root.querySelector("#overlay-settings")!,
+			pausePanel: root.querySelector("#overlay-pause")!,
+			modeBlurb: root.querySelector("#intro-mode-blurb")!,
 			ink: root.querySelector("#btn-ink")!,
 			trunkIso: root.querySelector("#btn-trunk-iso")!,
 			pauseBtn: root.querySelector("#btn-pause")!,
@@ -250,6 +263,11 @@ export class Game {
 		root
 			.querySelectorAll<HTMLButtonElement>('[data-action="new-track"]')
 			.forEach((b) => b.addEventListener("click", () => this.newTrack()));
+		root
+			.querySelectorAll<HTMLButtonElement>('[data-action="resume"]')
+			.forEach((b) =>
+				b.addEventListener("click", () => this.resumeFromPause()),
+			);
 		this.hud.ink.addEventListener("click", () => this.toggleInk());
 		this.hud.trunkIso.addEventListener("click", () => this.toggleTrunkIso());
 		root.querySelector("#trunk-iso-panel")?.addEventListener("click", () => {
@@ -262,18 +280,22 @@ export class Game {
 			if (e.target === this.popoutEl) this.setPopoutOpen(false);
 		});
 		window.addEventListener("keydown", (e) => {
-			if (e.code === "Escape" && this.popoutOpen) this.setPopoutOpen(false);
-			if (e.code === "Escape" && !this.hud.settingsPanel.hidden)
+			if (e.code === "Escape" && this.popoutOpen) {
+				this.setPopoutOpen(false);
+				return;
+			}
+			if (e.code === "Escape" && !this.hud.settingsPanel.hidden) {
 				this.toggleSettings(false);
+				return;
+			}
+			if (e.code === "Escape" && !this.hud.pausePanel.hidden)
+				this.resumeFromPause();
 		});
 		const armAudio = () => this.audio.unlock();
 		window.addEventListener("pointerdown", armAudio);
 		window.addEventListener("keydown", armAudio);
 		window.addEventListener("blur", () => {
-			this.paused = true;
-			this.audio.idle();
-			this.syncAudioDuck();
-			this.syncPauseUi();
+			if (this.phase === "driving") this.pauseRun();
 		});
 		this.bindIntroControls(root);
 		this.bindSettings(root);
@@ -368,6 +390,9 @@ export class Game {
 		cargoSel.value = this.runConfig.cargo;
 		vehSel.value = this.runConfig.vehicle;
 		archSel.value = this.runConfig.archetype;
+		const syncModeBlurb = () => {
+			this.hud.modeBlurb.textContent = modeBlurb(this.runConfig.mode);
+		};
 		const apply = () => {
 			this.runConfig.mode = modeSel.value as RunConfig["mode"];
 			this.runConfig.difficulty = diffSel.value as RunConfig["difficulty"];
@@ -376,10 +401,12 @@ export class Game {
 			this.runConfig.archetype = archSel.value as RunConfig["archetype"];
 			history.replaceState(null, "", `?${runConfigToQuery(this.runConfig)}`);
 			this.track = this.buildTrack();
+			syncModeBlurb();
 			this.resetRun();
 		};
 		for (const el of [modeSel, diffSel, cargoSel, vehSel, archSel])
 			el.addEventListener("change", apply);
+		syncModeBlurb();
 		root
 			.querySelector('[data-action="daily-seed"]')
 			?.addEventListener("click", () => {
@@ -525,14 +552,31 @@ export class Game {
 
 	private togglePause() {
 		if (this.phase !== "driving") return;
-		this.paused = !this.paused;
-		if (this.paused) this.audio.idle();
+		if (this.paused) this.resumeFromPause();
+		else this.pauseRun();
+	}
+
+	private pauseRun() {
+		if (this.phase !== "driving" || this.paused) return;
+		this.paused = true;
+		this.audio.idle();
+		this.syncAudioDuck();
+		this.syncPauseUi();
+	}
+
+	private resumeFromPause() {
+		if (!this.paused) return;
+		this.paused = false;
+		this.hud.pausePanel.hidden = true;
 		this.syncAudioDuck();
 		this.syncPauseUi();
 	}
 
 	private syncPauseUi() {
 		this.hud.pauseBtn.textContent = this.paused ? "Resume" : "Pause";
+		const showPauseCard =
+			this.paused && this.phase === "driving" && this.hud.intro.hidden;
+		this.hud.pausePanel.hidden = !showPauseCard;
 	}
 
 	private newTrack() {
@@ -684,6 +728,7 @@ export class Game {
 		this.punch = 0;
 		this.pitchSettle = { pitch: 0, velocity: 0 };
 		this.hudSloshBand = "calm";
+		this.cargoThreat = "ok";
 		this.spillWindow = 0;
 		this.lastSpillVol = this.fluid.spilledVolume;
 		this.lastWheel = [null, null, null, null];
@@ -696,7 +741,10 @@ export class Game {
 		this.hud.intro.hidden = false;
 		this.hud.result.hidden = true;
 		this.hud.fail.hidden = true;
+		this.hud.pausePanel.hidden = true;
 		this.hud.tutorial.hidden = true;
+		this.hud.live.textContent = "";
+		this.hud.ghostSplit.hidden = true;
 		this.syncAudioDuck();
 		this.syncPauseUi();
 		this.syncSeedHud();
@@ -813,6 +861,10 @@ export class Game {
 			along >= this.track.checkpoints[this.stats.checkpointIndex]
 		) {
 			this.stats.checkpointIndex++;
+			const n = this.stats.checkpointIndex;
+			const pos = snap.pos;
+			this.particles.addPopup(pos.x, pos.y - 1.8, `CHECKPOINT ${n}`, false);
+			this.audio.checkpointChirp();
 		}
 	}
 
@@ -825,9 +877,12 @@ export class Game {
 	private failRun(reason: string) {
 		if (this.phase !== "driving") return;
 		this.phase = "failed";
+		this.paused = false;
+		this.hud.pausePanel.hidden = true;
 		this.hud.fail.querySelector("p")!.textContent = reason;
 		this.hud.fail.hidden = false;
 		this.syncAudioDuck();
+		this.syncPauseUi();
 	}
 
 	private showTutorialHint(
@@ -896,8 +951,21 @@ export class Game {
 			big ? `SPLOOSH! -${liters.toFixed(0)}L` : `-${liters.toFixed(1)}L`,
 			big,
 		);
+		this.pushLive({ spillLiters: liters });
 		this.spillWindow = 0;
 		this.spillTimer = 0.45;
+	}
+
+	private pushLive(partial: {
+		spillLiters?: number;
+		band?: SloshBand;
+		prevBand?: SloshBand;
+		threat?: CargoThreat;
+		prevThreat?: CargoThreat;
+	}) {
+		const msg = liveAnnouncement(partial);
+		if (!msg) return;
+		this.hud.live.textContent = msg;
 	}
 
 	private trackWheels(dt: number) {
@@ -997,6 +1065,8 @@ export class Game {
 				return;
 			}
 			this.phase = "finished";
+			this.paused = false;
+			this.hud.pausePanel.hidden = true;
 			const g = grade(kept);
 			this.hud.resultKept.textContent = `${(kept * 100).toFixed(0)}%`;
 			this.hud.resultTime.textContent = fmtTime(this.elapsed);
@@ -1064,15 +1134,31 @@ export class Game {
 	private updateHud(snap: VehicleSnapshot) {
 		const kept = this.fluid.remainingRatio();
 		this.setText(this.hud.liquid, `${(kept * 100).toFixed(0)}%`);
+		const prevThreat = this.cargoThreat;
+		this.cargoThreat = cargoThreatLevel(kept, this.runConfig.mode);
 		const bar = `${(kept * 100).toFixed(1)}%`;
-		if (this.hudCache.get(this.hud.liquidBar) !== bar) {
-			this.hudCache.set(this.hud.liquidBar, bar);
+		const barKey = `${bar}:${this.cargoThreat}`;
+		if (this.hudCache.get(this.hud.liquidBar) !== barKey) {
+			this.hudCache.set(this.hud.liquidBar, barKey);
 			this.hud.liquidBar.style.width = bar;
 			this.hud.liquidBar.dataset.level =
-				kept > 0.75 ? "ok" : kept > 0.4 ? "warn" : "bad";
+				this.cargoThreat === "danger" ? "bad" : this.cargoThreat;
 		}
+		if (this.cargoThreat === "danger" && prevThreat !== "danger")
+			this.pushLive({ threat: "danger", prevThreat });
 		this.setText(this.hud.speed, (snap.speed * 3.6).toFixed(0));
 		this.setText(this.hud.time, fmtTime(this.elapsed));
+		const split = ghostSplitLabel(
+			this.elapsed,
+			this.ghost.elapsed,
+			this.ghost.active && this.phase === "driving",
+		);
+		if (split) {
+			this.hud.ghostSplit.hidden = false;
+			this.setText(this.hud.ghostSplit, split);
+		} else {
+			this.hud.ghostSplit.hidden = true;
+		}
 		this.setText(
 			this.hud.progress,
 			`${(this.track.progress(snap.pos) * 100).toFixed(0)}%`,
@@ -1088,8 +1174,10 @@ export class Game {
 		);
 		this.setText(this.hud.air, airborneLabel(snap.airborne));
 		const slosh = this.fluid.sloshSpeed();
+		const prevBand = this.hudSloshBand;
 		this.hudSloshBand = nextSloshBand(this.hudSloshBand, slosh);
 		const band = this.hudSloshBand;
+		if (band === "lip" && prevBand !== "lip") this.pushLive({ band, prevBand });
 		this.setText(this.hud.slosh, band);
 		const fill = `${(sloshFill(slosh) * 100).toFixed(0)}%`;
 		if (this.hudCache.get(this.hud.sloshBar) !== `${band}:${fill}`) {

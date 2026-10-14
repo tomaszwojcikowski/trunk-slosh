@@ -19,8 +19,9 @@ app.innerHTML = `
           <span class="slosh-meter"><span id="hud-slosh-bar" data-level="calm"></span></span>
           <b id="hud-slosh">calm</b>
         </div>
-        <div class="seed-line"><em id="hud-seed">Seed</em> <em id="hud-ghost" hidden>Ghost</em></div>
+        <div class="seed-line"><em id="hud-seed">Seed</em> <em id="hud-ghost" hidden>Ghost</em> <b id="hud-ghost-split" hidden></b></div>
       </section>
+      <div id="hud-live" class="hud-live" aria-live="polite" aria-atomic="true"></div>
       <section class="panel panel-speed" aria-label="Speed">
         <div class="speed-row"><strong id="hud-speed" class="big-num">0</strong><span class="unit">km/h</span></div>
         <div class="stats">
@@ -99,6 +100,7 @@ app.innerHTML = `
           <label>Cargo <select id="select-cargo"><option value="water">Water</option><option value="thick">Thick</option><option value="volatile">Volatile</option></select></label>
           <label>Vehicle <select id="select-vehicle"><option value="pickup">Pickup</option><option value="short">Short wheelbase</option></select></label>
         </div>
+        <p class="intro-mode-blurb" id="intro-mode-blurb"></p>
         <button type="button" class="chip daily-chip" data-action="daily-seed">Play today’s daily seed</button>
         <ul class="keys">
           <li><kbd>W</kbd><kbd>S</kbd> gas / brake · <kbd>P</kbd> pause · <kbd>,</kbd> settings</li>
@@ -110,12 +112,24 @@ app.innerHTML = `
       </div>
     </div>
 
+    <div class="overlay" id="overlay-pause" hidden>
+      <div class="card burst pause-card">
+        <h2 class="title small">Paused</h2>
+        <p class="tagline">The desert can wait.</p>
+        <div class="result-actions">
+          <button type="button" class="btn" data-action="resume">Resume</button>
+          <button type="button" class="btn btn-alt" data-action="restart">Retry this seed</button>
+          <button type="button" class="btn btn-alt" data-action="open-settings">Settings</button>
+        </div>
+      </div>
+    </div>
+
     <div class="overlay" id="overlay-fail" hidden>
       <div class="card burst fail-card">
         <h2 class="title small">Run over</h2>
         <p class="tagline"></p>
         <div class="result-actions">
-          <button type="button" class="btn" data-action="restart">Try again</button>
+          <button type="button" class="btn" data-action="restart">Retry this seed</button>
           <button type="button" class="btn btn-alt" data-action="new-track">New track</button>
         </div>
       </div>
@@ -135,10 +149,10 @@ app.innerHTML = `
         <p class="result-best" id="result-best"></p>
         <p class="result-achievements" id="result-achievements"></p>
         <div class="result-actions">
-          <button type="button" class="btn" data-action="share-card">Share card</button>
-          <button type="button" class="btn btn-alt" data-action="post-score">Copy score post</button>
-          <button type="button" class="btn" data-action="restart">Run it again</button>
+          <button type="button" class="btn" data-action="restart">Retry this seed</button>
           <button type="button" class="btn btn-alt" data-action="new-track">New track</button>
+          <button type="button" class="btn btn-alt" data-action="share-card">Share card</button>
+          <button type="button" class="btn btn-alt" data-action="post-score">Copy score post</button>
         </div>
       </div>
     </div>
