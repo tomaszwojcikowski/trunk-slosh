@@ -1054,7 +1054,11 @@ export class Game {
 				nearMiss: nearMissFor(clearance),
 				airborne: snap.airborne,
 				impact: snap.impact,
-				active: this.settings.music && this.phase === "driving" && !this.paused,
+				active:
+					this.settings.music &&
+					!this.paused &&
+					this.phase !== "finished" &&
+					this.phase !== "failed",
 			}),
 		);
 		this.pitchSettle = settlePitch(
