@@ -233,7 +233,7 @@ The main view is true isometric. The chase frame eases toward its lookahead and 
 
 The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe and fade with life. Splats, skids, and spill popups soften before they leave. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
 
-The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, desert wind, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Adaptive music adds bed, drive, tension, air, and hit layers driven by speed, slosh, cargo threat, airborne, and impacts (Settings → Dynamic music). Master volume lives in Settings; mute and pause duck continuous layers without zipper clicks. Rumble goes quiet in the air and the engine drops the throttle term; wind thins in the air. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
+The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, desert wind, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Adaptive music adds bed, drive, tension, air, and hit layers driven by speed, slosh, cargo threat, prop near-miss, airborne, and impacts (Settings → Dynamic music). Master volume lives in Settings; mute and pause duck continuous layers without zipper clicks. Rumble goes quiet in the air and the engine drops the throttle term; wind thins in the air. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
 
 ---
 
@@ -998,7 +998,7 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Goals**
 
-- Layered Web Audio music responds to speed, slosh, cargo threat, airtime, and impacts.
+- Layered Web Audio music responds to speed, slosh, cargo threat, prop near-miss, airtime, and impacts.
 - Music and SFX mute independently; master volume and pause duck still apply.
 
 **Deliverables**

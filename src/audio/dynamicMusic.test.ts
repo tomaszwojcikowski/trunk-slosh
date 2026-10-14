@@ -3,6 +3,7 @@ import {
 	type MusicDrivers,
 	musicGroupGainFor,
 	musicMixFor,
+	nearMissFor,
 	threatBias,
 } from "./dynamicMusic";
 
@@ -10,6 +11,7 @@ const base: MusicDrivers = {
 	speed: 0,
 	slosh: 0,
 	threat: "ok",
+	nearMiss: 0,
 	airborne: false,
 	impact: 0,
 	active: true,
@@ -34,15 +36,20 @@ describe("dynamic music mix", () => {
 		expect(cruise.drive).toBeLessThanOrEqual(1);
 	});
 
-	it("raises tension from slosh and cargo threat", () => {
+	it("raises tension from slosh, cargo threat, and near misses", () => {
 		expect(threatBias("ok")).toBe(0);
 		expect(threatBias("warn")).toBeGreaterThan(0);
 		expect(threatBias("danger")).toBe(1);
+		expect(nearMissFor(10)).toBe(0);
+		expect(nearMissFor(0.5)).toBeGreaterThan(nearMissFor(3));
+		expect(nearMissFor(-0.2)).toBe(1);
 		const calm = musicMixFor(base);
 		const sloshy = musicMixFor({ ...base, slosh: 1.2 });
 		const danger = musicMixFor({ ...base, threat: "danger" });
+		const graze = musicMixFor({ ...base, nearMiss: 0.9 });
 		expect(sloshy.tension).toBeGreaterThan(calm.tension);
 		expect(danger.tension).toBeGreaterThan(calm.tension);
+		expect(graze.tension).toBeGreaterThan(calm.tension);
 	});
 
 	it("lifts the air layer and softens drive while airborne", () => {

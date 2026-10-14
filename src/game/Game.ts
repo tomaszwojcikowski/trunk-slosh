@@ -1,7 +1,7 @@
 import { AudioBus, rollGainFor } from "../audio/AudioBus";
 import { airborneMix } from "../audio/airborneMix";
 import { lipAccentGain, sloshCutoffFor } from "../audio/cargoVoice";
-import { musicMixFor } from "../audio/dynamicMusic";
+import { musicMixFor, nearMissFor } from "../audio/dynamicMusic";
 import { Input } from "../input/Input";
 import type { Vec2 } from "../math/vec2";
 import { FluidLayer } from "../physics/FluidLayer";
@@ -1041,11 +1041,17 @@ export class Game {
 			this.fluid.remainingRatio(),
 			this.runConfig.mode,
 		);
+		let clearance = Number.POSITIVE_INFINITY;
+		for (const o of this.track.obstacles) {
+			const gap = Math.hypot(o.x - snap.pos.x, o.y - snap.pos.y) - o.r - 1.1;
+			if (gap < clearance) clearance = gap;
+		}
 		this.audio.musicTick(
 			musicMixFor({
 				speed: snap.speed,
 				slosh: this.fluid.sloshSpeed(),
 				threat,
+				nearMiss: nearMissFor(clearance),
 				airborne: snap.airborne,
 				impact: snap.impact,
 				active: this.settings.music && this.phase === "driving" && !this.paused,
