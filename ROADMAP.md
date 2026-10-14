@@ -1058,5 +1058,6 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.30.x** | Phase 29 |
 | **0.31.x** | Phase 30 |
 | **0.32.x** | Rapier3D raycast vehicle (post–Phase 30) |
+| **0.33.x** | Truck detail, dune/berm 3D, live barrel sync |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.

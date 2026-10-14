@@ -1002,8 +1002,21 @@ export class Game {
 				);
 			}
 		});
-		if (snap.impact > 25 && !this.settings.reducedMotion)
-			this.shake = Math.min(1, this.shake + snap.impact / 120);
+		if (snap.impact > 25) {
+			if (!this.settings.reducedMotion)
+				this.shake = Math.min(1, this.shake + snap.impact / 120);
+			const bursts = snap.impactKind === "barrel" ? 5 : 3;
+			for (let i = 0; i < bursts; i++) {
+				this.particles.addPuff(
+					snap.pos.x + (Math.random() - 0.5) * 1.4,
+					snap.pos.y + (Math.random() - 0.5) * 1.4,
+					snap.vel.x * -0.1 + (Math.random() - 0.5) * 2.4,
+					snap.vel.y * -0.1 + (Math.random() - 0.5) * 2.4,
+					0.4 + Math.random() * 0.45,
+					snap.z + 0.2,
+				);
+			}
+		}
 		this.audio.impactThud(snap.impact, snap.impactKind);
 		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
 		this.audio.tireScrub(skid);
@@ -1203,6 +1216,7 @@ export class Game {
 		if (steps === MAX_STEPS) this.accum = 0;
 
 		const snap = this.vehicle.snapshot(this.fluid.mass());
+		this.vehicle.syncProps(this.track);
 		const drawSnap: VehicleSnapshot = {
 			...snap,
 			pitch: this.pitchSettle.pitch,
