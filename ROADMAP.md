@@ -1003,8 +1003,8 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 **Deliverables**
 
-- [x] Pure `musicMixFor` drivers with unit tests for bed / drive / tension / air / hit.
-- [x] `AudioBus.musicTick` continuous layers under a music group gain.
+- [x] Pure `musicMixFor` drivers with unit tests for bed / drive / bass / lead / tension / air / hit / bpm.
+- [x] `AudioBus.musicTick` chase groove (pad, sequenced bass/lead, pulse, hats) under a music group gain.
 - [x] Settings → **Dynamic music** persisted with the other display settings.
 - [x] Game wires drivers every step while driving; idle / pause / finish silence or duck the score.
 
