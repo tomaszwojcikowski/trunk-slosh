@@ -32,9 +32,10 @@ describe("review juice", () => {
 				);
 			}
 			const snap = vehicle.snapshot();
-			const dusty =
-				snap.speed > 3 &&
-				snap.wheels.some((w) => (w.sand || w.skid > 0.35) && w.skid > 0.2);
+			// Match Game.ts dust gate: sand at speed, or a hard skid.
+			const dusty = snap.wheels.some(
+				(w) => (w.sand && snap.speed > 3) || w.skid > 0.35,
+			);
 			if (dusty && i % 4 === 0)
 				particles.addPuff(snap.pos.x, snap.pos.y, 0, 0, 0.4, snap.z);
 			elapsed += dt;

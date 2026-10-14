@@ -1,25 +1,18 @@
-import Matter from "matter-js";
-
-const { Events } = Matter;
-
+import type { RigidBody, Rotation, World } from "@dimforge/rapier3d-compat";
 import { rotate, type Vec2 } from "../math/vec2";
 import type { ObstacleKind, Track } from "../world/Track";
 import type { FluidFrame, FluidLayer } from "./FluidLayer";
+import { getRapier } from "./rapierInit";
 import { TRUNK_LOCAL } from "./trunkConstants";
-import { stepVertical, type VerticalState } from "./vertical";
 import { advanceWheelAngle, pitchFromLongAccel } from "./wheelPitch";
-
-const HIT_KINDS = new Set<string>(["rock", "cactus", "barrel", "tires"]);
 
 export { TRUNK_LOCAL };
 
-const { Engine, Bodies, Body, Composite } = Matter;
-
 const G = 9.81;
-/** Matter integrates with time in milliseconds: 1 N = 1 kg·m/s² = 1e-6 kg·m/ms² */
-const NEWTON = 1e-6;
-/** Matter velocities are displacement per 1000/60 ms base step */
-const BASE_STEPS_PER_SECOND = 60;
+/** Ground ribbon samples along the centerline (m). Wider than the road for off-road. */
+const GROUND_STEP = 5;
+const GROUND_HALF_W = 20;
+const GROUND_HALF_H = 0.4;
 
 export const CAR_SPEC = {
 	mass: 1350,
@@ -38,14 +31,17 @@ export const CAR_SPEC = {
 	brake: 15_000,
 	reverse: 3800,
 	cdA: 0.72,
-	/** Simplified Pacejka magic formula: F = μ·Fz·sin(C·atan(B·α)) */
+	/** Kept for presets / art; tire response now comes from Rapier's raycast vehicle. */
 	tireB: 9,
 	tireC: 1.5,
+	wheelRadius: 0.38,
+	suspensionRest: 0.32,
+	chassisHalfHeight: 0.42,
 };
 
 const SURFACE = {
-	road: { mu: 1.0, roll: 0.015 },
-	sand: { mu: 0.62, roll: 0.07 },
+	road: { slip: 4.0 },
+	sand: { slip: 2.0 },
 };
 
 export type DriveInput = {
@@ -77,7 +73,7 @@ export type VehicleSnapshot = {
 	impact: number;
 	/** Prop kind that produced the latest chassis contact, if known. */
 	impactKind: ObstacleKind | null;
-	/** Chassis height above z = 0 (m). Follows the road, then ballistic on a ramp. */
+	/** Chassis height above z = 0 (m). */
 	z: number;
 	pitch: number;
 	wheelAngle: number;
@@ -91,15 +87,56 @@ export type VehicleSnapshot = {
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.max(lo, Math.min(hi, x));
 
+const HIT_KINDS = new Set<string>(["rock", "cactus", "barrel", "tires"]);
+
+type WheelTuning = {
+	stiffness: number;
+	compression: number;
+	relaxation: number;
+	maxForce: number;
+	travel: number;
+};
+
+const WHEEL_TUNING: WheelTuning = {
+	stiffness: 28,
+	compression: 2.4,
+	relaxation: 3.8,
+	maxForce: 14_000,
+	travel: 0.34,
+};
+
+/** Rapier Y-up yaw for a game heading (game +X forward at angle 0). */
+function yawFromGameAngle(angle: number): number {
+	return -angle;
+}
+
+function gameAngleFromYaw(yaw: number): number {
+	return -yaw;
+}
+
+function quatFromYaw(yaw: number): Rotation {
+	const h = yaw * 0.5;
+	return { x: 0, y: Math.sin(h), z: 0, w: Math.cos(h) };
+}
+
+function yawFromQuat(q: Rotation): number {
+	return Math.atan2(
+		2 * (q.w * q.y + q.x * q.z),
+		1 - 2 * (q.y * q.y + q.z * q.z),
+	);
+}
+
 /**
- * Top-down car on Matter.js. Matter integrates the chassis and resolves collisions with roadside
- * props; tire forces come from a bicycle model with load transfer, friction circle and a
- * magic-formula tire. The trunk liquid feeds back through its mass and its sloshing center of mass.
+ * Rapier3D raycast vehicle under an isometric top-down game.
+ * Game (x,y) ↔ Rapier (x,z); game height z ↔ Rapier y. Fluid coupling stays in FluidFrame.
  */
 export class VehicleSimulation {
 	readonly spec = CAR_SPEC;
-	private engine = Engine.create({ gravity: { x: 0, y: 0, scale: 0 } });
-	private chassis: Matter.Body;
+	private world: World | null = null;
+	private chassis: RigidBody | null = null;
+	private vehicle: ReturnType<World["createVehicleController"]> | null = null;
+	private chassisCollider: { setMass(m: number): void } | null = null;
+	private kindByCollider = new Map<number, ObstacleKind | "chassis">();
 	private steerAngle = 0;
 	private accelLocal: Vec2 = { x: 0, y: 0 };
 	private alpha = 0;
@@ -107,49 +144,96 @@ export class VehicleSimulation {
 	private impact = 0;
 	private impactKind: ObstacleKind | null = null;
 	private onRoad = true;
-	private vertical: VerticalState = {
-		z: 0,
-		vz: 0,
-		airborne: false,
-		airborneTime: 0,
-	};
 	private wheelAngle = 0;
 	private liquidWorld: Vec2 = { x: 0, y: 0 };
 	private wheels: WheelInfo[] = [];
 	private comHistory: Vec2[] = [];
 	private comAccel: Vec2 = { x: 0, y: 0 };
+	private lastVel: Vec2 = { x: 0, y: 0 };
+	private lastOmega = 0;
+	private airTime = 0;
+	private wasAirborne = false;
+	/** Road / flight height for the art pass (ground reference, not COM). */
+	private visualZ = 0;
 	private lastGood = { pos: { x: 0, y: 0 }, angle: 0 };
-
-	private readonly onCollisionBound = (
-		ev: Matter.IEventCollision<Matter.Engine>,
-	) => this.onCollision(ev);
-
-	constructor() {
-		this.chassis = this.makeChassis({ x: 0, y: 0 }, 0);
-		Composite.add(this.engine.world, this.chassis);
-		Events.on(this.engine, "collisionStart", this.onCollisionBound);
-	}
+	private eventQueue: InstanceType<
+		ReturnType<typeof getRapier>["EventQueue"]
+	> | null = null;
 
 	reset(track: Track) {
-		Composite.clear(this.engine.world, false, true);
-		this.chassis = this.makeChassis(track.start, track.startAngle);
-		const props = track.obstacles.map((o) =>
-			o.dynamic && o.kind === "barrel"
-				? Bodies.circle(o.x, o.y, o.r, {
-						isStatic: false,
-						density: 0.0022,
-						friction: 0.55,
-						restitution: 0.35,
-						label: o.kind,
-					})
-				: Bodies.circle(o.x, o.y, o.r, {
-						isStatic: true,
-						friction: 0.5,
-						restitution: 0.2,
-						label: o.kind,
-					}),
+		const RAPIER = getRapier();
+		this.eventQueue?.free();
+		this.eventQueue = null;
+		this.world?.free();
+		this.world = null;
+		this.chassis = null;
+		this.vehicle = null;
+		this.chassisCollider = null;
+		this.kindByCollider.clear();
+
+		const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
+		world.timestep = 1 / 120;
+		this.world = world;
+		this.eventQueue = new RAPIER.EventQueue(true);
+
+		this.buildGround(track);
+		this.buildObstacles(track);
+
+		const startH = track.heightAt(track.query(track.start).along);
+		const yaw = yawFromGameAngle(track.startAngle);
+		const ride =
+			CAR_SPEC.wheelRadius +
+			CAR_SPEC.suspensionRest +
+			CAR_SPEC.chassisHalfHeight;
+		const chassis = world.createRigidBody(
+			RAPIER.RigidBodyDesc.dynamic()
+				.setTranslation(track.start.x, startH + ride, track.start.y)
+				.setRotation(quatFromYaw(yaw))
+				.setLinearDamping(0.04)
+				.setAngularDamping(1.1)
+				.setCanSleep(false)
+				.setCcdEnabled(true),
 		);
-		Composite.add(this.engine.world, [this.chassis, ...props]);
+		const colDesc = RAPIER.ColliderDesc.cuboid(
+			CAR_SPEC.halfLength * 0.92,
+			CAR_SPEC.chassisHalfHeight,
+			CAR_SPEC.halfWidth * 0.92,
+		)
+			.setMass(CAR_SPEC.mass)
+			.setFriction(0.4)
+			.setRestitution(0.12)
+			.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+		const col = world.createCollider(colDesc, chassis);
+		this.kindByCollider.set(col.handle, "chassis");
+		this.chassisCollider = col;
+		this.chassis = chassis;
+
+		const vehicle = world.createVehicleController(chassis);
+		const places = [
+			{ x: CAR_SPEC.a, y: 0, z: -CAR_SPEC.trackHalf },
+			{ x: CAR_SPEC.a, y: 0, z: CAR_SPEC.trackHalf },
+			{ x: -CAR_SPEC.b, y: 0, z: -CAR_SPEC.trackHalf },
+			{ x: -CAR_SPEC.b, y: 0, z: CAR_SPEC.trackHalf },
+		];
+		for (const pos of places) {
+			vehicle.addWheel(
+				pos,
+				{ x: 0, y: -1, z: 0 },
+				{ x: 0, y: 0, z: 1 },
+				CAR_SPEC.suspensionRest,
+				CAR_SPEC.wheelRadius,
+			);
+			const i = vehicle.numWheels() - 1;
+			vehicle.setWheelSuspensionStiffness(i, WHEEL_TUNING.stiffness);
+			vehicle.setWheelSuspensionCompression(i, WHEEL_TUNING.compression);
+			vehicle.setWheelSuspensionRelaxation(i, WHEEL_TUNING.relaxation);
+			vehicle.setWheelMaxSuspensionForce(i, WHEEL_TUNING.maxForce);
+			vehicle.setWheelMaxSuspensionTravel(i, WHEEL_TUNING.travel);
+			vehicle.setWheelFrictionSlip(i, SURFACE.road.slip);
+			vehicle.setWheelSideFrictionStiffness(i, 1);
+		}
+		this.vehicle = vehicle;
+
 		this.steerAngle = 0;
 		this.accelLocal = { x: 0, y: 0 };
 		this.alpha = 0;
@@ -157,61 +241,139 @@ export class VehicleSimulation {
 		this.impact = 0;
 		this.impactKind = null;
 		this.wheelAngle = 0;
-		const along = track.query(track.start).along;
-		this.vertical = {
-			z: track.heightAt(along),
-			vz: 0,
-			airborne: false,
-			airborneTime: 0,
-		};
-		this.liquidWorld = track.liquidAccelAt(along);
+		this.airTime = 0;
+		this.wasAirborne = false;
+		this.visualZ = startH;
+		this.liquidWorld = track.liquidAccelAt(track.query(track.start).along);
 		this.comHistory = [];
 		this.comAccel = { x: 0, y: 0 };
+		this.lastVel = { x: 0, y: 0 };
+		this.lastOmega = 0;
 		this.lastGood = { pos: { ...track.start }, angle: track.startAngle };
 		this.wheels = this.wheelLocals().map((l) => ({
 			world: this.localToWorld(l),
 			skid: 0,
 			sand: false,
 		}));
+		this.onRoad = true;
+
+		// Settle suspension onto the ribbon before the first player step.
+		for (let i = 0; i < 12; i++) {
+			for (let w = 0; w < 4; w++) {
+				vehicle.setWheelEngineForce(w, 0);
+				vehicle.setWheelBrake(w, 8);
+				vehicle.setWheelSteering(w, 0);
+			}
+			vehicle.updateVehicle(1 / 120);
+			world.step();
+		}
+		chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
+		chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
+		const t = chassis.translation();
+		this.lastGood = {
+			pos: { x: t.x, y: t.z },
+			angle: gameAngleFromYaw(yawFromQuat(chassis.rotation())),
+		};
+		this.lastVel = { x: 0, y: 0 };
+		this.lastOmega = 0;
 	}
 
-	private onCollision(ev: Matter.IEventCollision<Matter.Engine>) {
-		for (const pair of ev.pairs) {
-			const labels = [pair.bodyA.label, pair.bodyB.label];
-			if (!labels.includes("chassis")) continue;
-			const other =
-				pair.bodyA.label === "chassis" ? pair.bodyB.label : pair.bodyA.label;
-			if (HIT_KINDS.has(other)) this.impactKind = other as ObstacleKind;
-			if (other === "cactus") {
-				const v = Body.getVelocity(this.chassis);
-				Body.setVelocity(this.chassis, { x: v.x * 0.82, y: v.y * 0.82 });
-				Body.setAngularVelocity(
-					this.chassis,
-					Body.getAngularVelocity(this.chassis) * 0.9,
-				);
-			}
+	private buildGround(track: Track) {
+		const RAPIER = getRapier();
+		const world = this.world!;
+		for (let s = 0; s < track.totalLength; s += GROUND_STEP) {
+			const s1 = Math.min(track.totalLength, s + GROUND_STEP);
+			const a = track.pointAt(s);
+			const b = track.pointAt(s1);
+			const midX = (a.p.x + b.p.x) * 0.5;
+			const midY = (a.p.y + b.p.y) * 0.5;
+			const along = (s + s1) * 0.5;
+			const h = track.heightAt(along);
+			const grade = track.gradeAt(along);
+			const bank = track.bankAt(along);
+			const gameYaw = Math.atan2(b.p.y - a.p.y, b.p.x - a.p.x);
+			const yaw = yawFromGameAngle(gameYaw);
+			const pitch = Math.atan(grade);
+			const halfLen = Math.max(1.2, (s1 - s) * 0.55);
+			const body = world.createRigidBody(
+				RAPIER.RigidBodyDesc.fixed().setTranslation(
+					midX,
+					h - GROUND_HALF_H,
+					midY,
+				),
+			);
+			const qYaw = quatFromYaw(yaw);
+			const qPitch = {
+				x: 0,
+				y: 0,
+				z: Math.sin(pitch * 0.5),
+				w: Math.cos(pitch * 0.5),
+			};
+			const qBank = {
+				x: Math.sin(bank * 0.5),
+				y: 0,
+				z: 0,
+				w: Math.cos(bank * 0.5),
+			};
+			const q1 = {
+				w:
+					qYaw.w * qPitch.w -
+					qYaw.x * qPitch.x -
+					qYaw.y * qPitch.y -
+					qYaw.z * qPitch.z,
+				x:
+					qYaw.w * qPitch.x +
+					qYaw.x * qPitch.w +
+					qYaw.y * qPitch.z -
+					qYaw.z * qPitch.y,
+				y:
+					qYaw.w * qPitch.y -
+					qYaw.x * qPitch.z +
+					qYaw.y * qPitch.w +
+					qYaw.z * qPitch.x,
+				z:
+					qYaw.w * qPitch.z +
+					qYaw.x * qPitch.y -
+					qYaw.y * qPitch.x +
+					qYaw.z * qPitch.w,
+			};
+			const rot = {
+				w: q1.w * qBank.w - q1.x * qBank.x - q1.y * qBank.y - q1.z * qBank.z,
+				x: q1.w * qBank.x + q1.x * qBank.w + q1.y * qBank.z - q1.z * qBank.y,
+				y: q1.w * qBank.y - q1.x * qBank.z + q1.y * qBank.w + q1.z * qBank.x,
+				z: q1.w * qBank.z + q1.x * qBank.y - q1.y * qBank.x + q1.z * qBank.w,
+			};
+			body.setRotation(rot, false);
+			world.createCollider(
+				RAPIER.ColliderDesc.cuboid(halfLen, GROUND_HALF_H, GROUND_HALF_W)
+					.setFriction(1.05)
+					.setRestitution(0),
+				body,
+			);
 		}
 	}
 
-	private makeChassis(pos: Vec2, angle: number): Matter.Body {
-		const s = this.spec;
-		const body = Bodies.rectangle(
-			pos.x,
-			pos.y,
-			s.halfLength * 2,
-			s.halfWidth * 2,
-			{
-				chamfer: { radius: [0.55, 0.55, 0.4, 0.4] },
-				friction: 0.35,
-				frictionAir: 0,
-				restitution: 0.15,
-				label: "chassis",
-			},
-		);
-		Body.setMass(body, s.mass);
-		Body.setInertia(body, s.inertia);
-		Body.setAngle(body, angle);
-		return body;
+	private buildObstacles(track: Track) {
+		const RAPIER = getRapier();
+		const world = this.world!;
+		for (const o of track.obstacles) {
+			const dynamic = Boolean(o.dynamic && o.kind === "barrel");
+			const body = world.createRigidBody(
+				(dynamic
+					? RAPIER.RigidBodyDesc.dynamic()
+					: RAPIER.RigidBodyDesc.fixed()
+				)
+					.setTranslation(o.x, o.z + o.r, o.y)
+					.setCcdEnabled(dynamic),
+			);
+			const desc = RAPIER.ColliderDesc.ball(o.r)
+				.setFriction(dynamic ? 0.55 : 0.5)
+				.setRestitution(dynamic ? 0.35 : 0.2)
+				.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+			if (dynamic) desc.setDensity(180);
+			const col = world.createCollider(desc, body);
+			this.kindByCollider.set(col.handle, o.kind);
+		}
 	}
 
 	private wheelLocals(): Vec2[] {
@@ -225,36 +387,42 @@ export class VehicleSimulation {
 	}
 
 	get angle(): number {
-		return this.chassis.angle;
+		if (!this.chassis) return this.lastGood.angle;
+		return gameAngleFromYaw(yawFromQuat(this.chassis.rotation()));
 	}
 
 	localToWorld(local: Vec2): Vec2 {
-		const r = rotate(local, this.chassis.angle);
-		return {
-			x: this.chassis.position.x + r.x,
-			y: this.chassis.position.y + r.y,
+		const angle = this.angle;
+		const r = rotate(local, angle);
+		const t = this.chassis?.translation() ?? {
+			x: this.lastGood.pos.x,
+			y: 0,
+			z: this.lastGood.pos.y,
 		};
+		return { x: t.x + r.x, y: t.z + r.y };
 	}
 
 	velocityWorld(): Vec2 {
-		const v = Body.getVelocity(this.chassis);
-		return { x: v.x * BASE_STEPS_PER_SECOND, y: v.y * BASE_STEPS_PER_SECOND };
+		if (!this.chassis) return { x: 0, y: 0 };
+		const v = this.chassis.linvel();
+		return { x: v.x, y: v.z };
 	}
 
 	yawRate(): number {
-		return Body.getAngularVelocity(this.chassis) * BASE_STEPS_PER_SECOND;
+		if (!this.chassis) return 0;
+		// Rapier yaw rate around +Y; game yaw is opposite.
+		return -this.chassis.angvel().y;
 	}
 
-	/** World velocity of a car-local point (rigid-body velocity field) */
 	pointVelocity(local: Vec2): Vec2 {
 		const v = this.velocityWorld();
 		const w = this.yawRate();
-		const r = rotate(local, this.chassis.angle);
+		const r = rotate(local, this.angle);
 		return { x: v.x - w * r.y, y: v.y + w * r.x };
 	}
 
 	fluidFrame(): FluidFrame {
-		const slope = rotate(this.liquidWorld, -this.chassis.angle);
+		const slope = rotate(this.liquidWorld, -this.angle);
 		return {
 			accel: {
 				x: clamp(this.accelLocal.x - slope.x, -60, 60),
@@ -265,18 +433,26 @@ export class VehicleSimulation {
 		};
 	}
 
+	get airborneTime(): number {
+		return this.airTime;
+	}
+
 	step(dt: number, input: DriveInput, track: Track, fluid: FluidLayer) {
+		const world = this.world;
+		const chassis = this.chassis;
+		const vehicle = this.vehicle;
+		if (!world || !chassis || !vehicle) {
+			throw new Error("VehicleSimulation.reset() required after initRapier()");
+		}
+
 		this.impactKind = null;
+		this.impact = 0;
 		const s = this.spec;
-		const c = this.chassis;
-		const angle = c.angle;
+		const angle = this.angle;
 		const vWorld = this.velocityWorld();
-		const omega = this.yawRate();
 		const vLocal = rotate(vWorld, -angle);
 		const vx = vLocal.x;
-		const vy = vLocal.y;
-		const speed = Math.hypot(vx, vy);
-		const dir = vx >= 0 ? 1 : -1;
+		const speed = Math.hypot(vWorld.x, vWorld.y);
 
 		const steerLimit = s.maxSteer / (1 + speed / 16);
 		const steerTarget = clamp(input.steer, -1, 1) * steerLimit;
@@ -285,184 +461,165 @@ export class VehicleSimulation {
 			-s.steerRate * dt,
 			s.steerRate * dt,
 		);
-		const delta = this.steerAngle;
+
+		const liquidMass = fluid.mass();
+		const com = fluid.centroidLocal();
+		const m = s.mass + liquidMass;
+		this.chassisCollider?.setMass(m);
+		chassis.recomputeMassPropertiesFromColliders();
+
+		const thr = clamp(input.throttle, -1, 1);
+		let engine = 0;
+		let brake = 0;
+		// Rapier raycast-vehicle forces are not SI Newtons; tune in controller units.
+		const brakeForce = 110;
+		const driveForce = 14_000;
+		const reverseForce = 4_000;
+		if (thr > 0) {
+			if (vx < -0.5) brake = thr * brakeForce;
+			else {
+				// Soft power falloff so top speed stays car-like without starving launch.
+				const falloff = 1 / (1 + Math.max(vx, 0) / 18);
+				engine = thr * driveForce * falloff;
+			}
+		} else if (thr < 0) {
+			// Hold the brakes until nearly stopped; only then allow reverse.
+			if (speed < 0.4 && vx <= 0.25) engine = thr * reverseForce;
+			else brake = -thr * brakeForce;
+		}
+		if (input.handbrake) brake = Math.max(brake, brakeForce * 1.2);
 
 		const locals = this.wheelLocals();
 		const sand = locals.map((l) => {
 			const q = track.query(this.localToWorld(l));
 			return !q.onRoad || track.inWash(q.along);
 		});
-		const mu = sand.map((x) => (x ? SURFACE.sand.mu : SURFACE.road.mu));
-		const muF = (mu[0] + mu[1]) / 2;
-		const muR = (mu[2] + mu[3]) / 2;
 		const sandShare = sand.filter(Boolean).length / 4;
-		let rollCoef =
-			SURFACE.road.roll + (SURFACE.sand.roll - SURFACE.road.roll) * sandShare;
-		const roadQ = track.query({ x: c.position.x, y: c.position.y });
-		this.onRoad = roadQ.onRoad;
-		if (!roadQ.onRoad) {
-			const sink = Math.min(
-				2.25,
-				1 +
-					speed * 0.045 +
-					Math.max(0, roadQ.dist - track.roadWidth * 0.5) * 0.08,
-			);
-			rollCoef *= sink;
-		}
 
-		const liquidMass = fluid.mass();
-		const com = fluid.centroidLocal();
-		const m = s.mass + liquidMass;
-		Body.setMass(c, m);
-		Body.setInertia(
-			c,
-			s.inertia + liquidMass * (com.x * com.x + com.y * com.y),
-		);
-
-		const L = s.a + s.b;
-		const axLoad = clamp(this.accelLocal.x, -1.5 * G, 1.5 * G);
-		const minLoad = 0.15 * m * G;
-		const Fzf = Math.max(
-			minLoad,
-			(m * G * s.b) / L - (m * axLoad * s.cgHeight) / L,
-		);
-		const Fzr = Math.max(
-			minLoad,
-			(m * G * s.a) / L + (m * axLoad * s.cgHeight) / L,
-		);
-		const limF = muF * Fzf;
-		const limR = muR * Fzr;
-
-		const thr = clamp(input.throttle, -1, 1);
-		let Fxf = 0;
-		let Fxr = 0;
-		let driving = false;
-		const applyBrake = (amount: number) => {
-			Fxf = -dir * 0.62 * s.brake * amount;
-			Fxr = -dir * 0.38 * s.brake * amount;
-		};
-		if (thr > 0) {
-			if (vx < -0.5) applyBrake(thr);
-			else {
-				Fxr = thr * Math.min(s.maxDrive, s.enginePower / Math.max(vx, 1));
-				driving = true;
-			}
-		} else if (thr < 0) {
-			if (vx > 0.5) applyBrake(-thr);
-			else {
-				Fxr = thr * s.reverse;
-				driving = true;
-			}
-		}
-		if (input.handbrake && Math.abs(vx) > 0.3) Fxr += -dir * limR * 0.8;
-
-		let lockF = false;
-		let lockR = false;
-		let spinR = false;
-		if (Math.abs(Fxf) > limF) {
-			Fxf = Math.sign(Fxf) * limF * 0.85;
-			lockF = speed > 2;
-		}
-		if (Math.abs(Fxr) > limR) {
-			Fxr = Math.sign(Fxr) * limR * 0.85;
-			if (driving) spinR = true;
-			else lockR = speed > 2;
-		}
-		if (input.handbrake && speed > 1) lockR = true;
-
-		const vxa = Math.max(Math.abs(vx), 2);
-		const steerBlend = Math.min(1, Math.abs(vx) / 2);
-		const alphaF = Math.atan2(vy + omega * s.a, vxa) - delta * dir * steerBlend;
-		const alphaR = Math.atan2(vy - omega * s.b, vxa);
-		const mf = (a: number) => Math.sin(s.tireC * Math.atan(s.tireB * a));
-		const FyF = -limF * mf(alphaF) * (lockF ? 0.5 : 1);
-		const util = Math.min(0.98, Math.abs(Fxr) / Math.max(limR, 1));
-		const FyR =
-			-limR *
-			Math.sqrt(1 - util * util) *
-			mf(alphaR) *
-			(input.handbrake ? 0.45 : 1) *
-			(lockR ? 0.6 : 1);
-
-		const cd = Math.cos(delta);
-		const sd = Math.sin(delta);
-		const frontF = { x: Fxf * cd - FyF * sd, y: Fxf * sd + FyF * cd };
-		const rearF = { x: Fxr, y: FyR };
-
-		let Fres = -0.5 * 1.2 * s.cdA * vx * Math.abs(vx);
-		if (Math.abs(vx) > 0.4) Fres -= Math.sign(vx) * rollCoef * m * G;
-		else if (thr === 0) Fres -= vx * m * 2.5;
+		// Aero + sand drag as chassis forces (Rapier tires do not model rolling resistance).
+		chassis.resetForces(true);
+		chassis.resetTorques(true);
+		const drag =
+			-0.5 * 1.2 * s.cdA * vx * Math.abs(vx) -
+			Math.sign(vx || 1) *
+				(0.015 + 0.055 * sandShare) *
+				m *
+				G *
+				(speed > 0.4 ? 1 : 0);
+		const dragWorld = rotate({ x: drag, y: 0 }, angle);
+		chassis.addForce({ x: dragWorld.x, y: 0, z: dragWorld.y }, true);
 
 		const fluidF = {
 			x: -liquidMass * this.comAccel.x,
 			y: -liquidMass * this.comAccel.y,
 		};
-
-		const apply = (point: Vec2, force: Vec2) => {
-			const p = rotate(point, angle);
-			const f = rotate(force, angle);
-			Body.applyForce(
-				c,
-				{ x: c.position.x + p.x, y: c.position.y + p.y },
-				{ x: f.x * NEWTON, y: f.y * NEWTON },
-			);
-		};
-		const gradeWorld = this.vertical.airborne
-			? { x: 0, y: 0 }
-			: track.gradeForceAt(roadQ.along);
-		const gradeLocal = rotate(gradeWorld, -angle);
-
-		apply({ x: s.a, y: 0 }, frontF);
-		apply({ x: -s.b, y: 0 }, rearF);
-		apply({ x: 0, y: 0 }, { x: Fres, y: 0 });
-		apply(com, fluidF);
-		apply({ x: 0, y: 0 }, { x: gradeLocal.x * m, y: gradeLocal.y * m });
-
-		const expected = rotate(
-			{
-				x: (frontF.x + rearF.x + Fres + fluidF.x) / m,
-				y: (frontF.y + rearF.y + fluidF.y) / m,
-			},
-			angle,
+		const fWorld = rotate(fluidF, angle);
+		const comWorld = this.localToWorld(com);
+		const t = chassis.translation();
+		chassis.addForceAtPoint(
+			{ x: fWorld.x, y: 0, z: fWorld.y },
+			{ x: comWorld.x, y: t.y, z: comWorld.y },
+			true,
 		);
-		expected.x += gradeWorld.x;
-		expected.y += gradeWorld.y;
 
-		Engine.update(this.engine, dt * 1000);
+		for (let i = 0; i < 4; i++) {
+			const front = i < 2;
+			const driven = !front;
+			// Rapier/Bullet steering sign is opposite our game +steer → +yaw convention.
+			vehicle.setWheelSteering(i, front ? -this.steerAngle : 0);
+			vehicle.setWheelEngineForce(i, driven ? engine * 0.5 : 0);
+			let wheelBrake = front ? brake * 0.62 : brake * 0.38;
+			if (input.handbrake && !front)
+				wheelBrake = Math.max(wheelBrake, brakeForce);
+			vehicle.setWheelBrake(i, wheelBrake);
+			const slip = sand[i] ? SURFACE.sand.slip : SURFACE.road.slip;
+			vehicle.setWheelFrictionSlip(
+				i,
+				input.handbrake && !front ? slip * 0.4 : slip,
+			);
+		}
 
+		world.timestep = dt;
+		vehicle.updateVehicle(dt);
+
+		const events = this.eventQueue!;
+		world.step(events);
+		events.drainCollisionEvents((h1, h2, started) => {
+			if (!started) return;
+			const k1 = this.kindByCollider.get(h1);
+			const k2 = this.kindByCollider.get(h2);
+			const other = k1 === "chassis" ? k2 : k2 === "chassis" ? k1 : undefined;
+			if (!other || other === "chassis" || !HIT_KINDS.has(other)) return;
+			this.impactKind = other as ObstacleKind;
+			if (other === "cactus") {
+				const v = chassis.linvel();
+				chassis.setLinvel({ x: v.x * 0.82, y: v.y, z: v.z * 0.82 }, true);
+				const w = chassis.angvel();
+				chassis.setAngvel({ x: w.x, y: w.y * 0.9, z: w.z }, true);
+			}
+		});
+
+		const tAfter = chassis.translation();
+		const ang = gameAngleFromYaw(yawFromQuat(chassis.rotation()));
 		if (
-			!Number.isFinite(c.position.x) ||
-			!Number.isFinite(c.position.y) ||
-			!Number.isFinite(c.angle)
+			!Number.isFinite(tAfter.x) ||
+			!Number.isFinite(tAfter.z) ||
+			!Number.isFinite(ang)
 		) {
-			Body.setPosition(c, this.lastGood.pos);
-			Body.setAngle(c, this.lastGood.angle);
-			Body.setVelocity(c, { x: 0, y: 0 });
-			Body.setAngularVelocity(c, 0);
+			chassis.setTranslation(
+				{ x: this.lastGood.pos.x, y: tAfter.y, z: this.lastGood.pos.y },
+				true,
+			);
+			chassis.setRotation(
+				quatFromYaw(yawFromGameAngle(this.lastGood.angle)),
+				true,
+			);
+			chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
+			chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
 		} else {
-			this.lastGood = {
-				pos: { x: c.position.x, y: c.position.y },
-				angle: c.angle,
-			};
+			this.lastGood = { pos: { x: tAfter.x, y: tAfter.z }, angle: ang };
 		}
 
 		const vAfter = this.velocityWorld();
 		const aWorld = {
-			x: (vAfter.x - vWorld.x) / dt,
-			y: (vAfter.y - vWorld.y) / dt,
+			x: (vAfter.x - this.lastVel.x) / Math.max(dt, 1e-4),
+			y: (vAfter.y - this.lastVel.y) / Math.max(dt, 1e-4),
 		};
-		this.accelLocal = rotate(aWorld, -c.angle);
-		this.alpha = (this.yawRate() - omega) / dt;
-		this.impact = Math.hypot(aWorld.x - expected.x, aWorld.y - expected.y);
-		this.wheelAngle = advanceWheelAngle(this.wheelAngle, speed, dt);
-		const landed = this.integrateVertical(dt, track);
-		this.impact += landed;
-		const qNow = track.query({ x: c.position.x, y: c.position.y });
-		this.liquidWorld = this.vertical.airborne
+		// Strip gravity-ish vertical; planar accel feeds the tub.
+		this.accelLocal = rotate(aWorld, -this.angle);
+		const omegaAfter = this.yawRate();
+		this.alpha = (omegaAfter - this.lastOmega) / Math.max(dt, 1e-4);
+		this.lastVel = vAfter;
+		this.lastOmega = omegaAfter;
+
+		const wheelsInAir = [0, 1, 2, 3].filter(
+			(i) => !vehicle.wheelIsInContact(i),
+		).length;
+		const airborne = wheelsInAir >= 3;
+		if (airborne) {
+			this.airTime = this.wasAirborne ? this.airTime + dt : dt;
+		} else if (this.wasAirborne) {
+			this.impact += Math.abs(chassis.linvel().y) * 6;
+			this.airTime = 0;
+		} else {
+			this.airTime = 0;
+		}
+		this.wasAirborne = airborne;
+
+		const qNow = track.query({ x: tAfter.x, y: tAfter.z });
+		this.onRoad = qNow.onRoad;
+		this.liquidWorld = airborne
 			? { x: 0, y: 0 }
 			: track.liquidAccelAt(qNow.along);
+		const ride =
+			CAR_SPEC.wheelRadius +
+			CAR_SPEC.suspensionRest +
+			CAR_SPEC.chassisHalfHeight;
+		this.visualZ = airborne ? tAfter.y - ride : track.heightAt(qNow.along);
+
 		const g = Math.hypot(this.accelLocal.x, this.accelLocal.y) / G;
 		this.gSmooth += (Math.min(g, 3) - this.gSmooth) * Math.min(1, dt * 8);
+		this.wheelAngle = advanceWheelAngle(this.wheelAngle, speed, dt);
 
 		this.comHistory.push(com);
 		if (this.comHistory.length > 3) this.comHistory.shift();
@@ -476,42 +633,26 @@ export class VehicleSimulation {
 			this.comAccel.y += (raw.y - this.comAccel.y) * 0.15;
 		}
 
-		const latF = Math.abs((vy + omega * s.a) * cd - vx * sd);
-		const latR = Math.abs(vy - omega * s.b);
-		const slide = (lat: number) => clamp((lat - 1.2) / 2.5, 0, 1);
-		const longF = lockF ? clamp(speed / 6, 0, 1) : 0;
-		const longR = lockR || spinR ? clamp(Math.max(speed, 3) / 6, 0, 1) : 0;
-		const skidF = Math.max(slide(latF), longF);
-		const skidR = Math.max(slide(latR), longR);
-		this.wheels = locals.map((l, i) => ({
-			world: this.localToWorld(l),
-			skid: i < 2 ? skidF : skidR,
-			sand: sand[i],
-		}));
-	}
-
-	get airborneTime(): number {
-		return this.vertical.airborneTime;
-	}
-
-	private integrateVertical(dt: number, track: Track): number {
-		const q = track.query({
-			x: this.chassis.position.x,
-			y: this.chassis.position.y,
+		const braking = brake > 100 || Boolean(input.handbrake);
+		this.wheels = locals.map((l, i) => {
+			const lat = Math.abs(rotate(this.pointVelocity(l), -this.angle).y);
+			const slide = clamp((lat - 0.7) / 2.0, 0, 1);
+			const lock = braking && speed > 1.5 ? clamp(speed / 6, 0, 1) : 0;
+			const skid = Math.max(slide, lock, sand[i] ? 0.2 : 0);
+			return {
+				world: this.localToWorld(l),
+				skid,
+				sand: sand[i],
+			};
 		});
-		const speed = Math.hypot(this.velocityWorld().x, this.velocityWorld().y);
-		const ground = track.heightAt(q.along);
-		const ahead = track.heightAt(q.along + Math.max(speed, 0) * dt);
-		const stepped = stepVertical(this.vertical, dt, ground, ahead, speed);
-		this.vertical = stepped.state;
-		return stepped.landedImpact;
 	}
 
 	snapshot(liquidMass = 0): VehicleSnapshot {
 		const v = this.velocityWorld();
+		const t = this.chassis?.translation();
 		return {
-			pos: { x: this.chassis.position.x, y: this.chassis.position.y },
-			angle: this.chassis.angle,
+			pos: t ? { x: t.x, y: t.z } : { ...this.lastGood.pos },
+			angle: this.angle,
 			vel: v,
 			speed: Math.hypot(v.x, v.y),
 			omega: this.yawRate(),
@@ -526,10 +667,10 @@ export class VehicleSimulation {
 			})),
 			impact: this.impact,
 			impactKind: this.impactKind,
-			z: this.vertical.z,
+			z: this.visualZ,
 			pitch: pitchFromLongAccel(this.accelLocal.x),
 			wheelAngle: this.wheelAngle,
-			airborne: this.vertical.airborne,
+			airborne: this.wasAirborne,
 			liquidMass,
 			halfLength: this.spec.halfLength,
 			halfWidth: this.spec.halfWidth,

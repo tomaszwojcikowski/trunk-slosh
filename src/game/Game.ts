@@ -158,7 +158,7 @@ export class Game {
 	private clock = 0;
 	private last = performance.now();
 	private accum = 0;
-	private camera: Camera = { x: 0, y: 0, zoom: 16 };
+	private camera: Camera = { x: 0, y: 0, zoom: 11 };
 	private shake = 0;
 	private inkEnabled = true;
 	private debug = false;
@@ -771,7 +771,8 @@ export class Game {
 	private targetZoom(speed: number) {
 		const minDim =
 			Math.min(this.wrap.clientWidth, this.wrap.clientHeight) || 600;
-		return minDim / (15 + speed * 0.45);
+		// Larger divisor → smaller zoom → more road ahead of the truck.
+		return minDim / (22 + speed * 0.55);
 	}
 
 	/** Lookahead pursuit along the centerline; powers the `?demo` attract mode. */

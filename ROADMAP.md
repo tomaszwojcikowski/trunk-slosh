@@ -15,7 +15,7 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 | **Game loop** | Ready → drive → cross finish → S–D grade from cargo kept + time shown |
 | **Controls** | WASD + ramped pedals, handbrake, touch pads, `R` / `N`, ink toggle, debug vectors |
 | **Track** | Seeded procedural desert centerline, obstacles, decor, start/finish gates |
-| **Vehicle** | Matter.js body + bicycle model, Pacejka-lite tires, load transfer, sand grip, collisions |
+| **Vehicle** | Rapier3D raycast vehicle (suspension wheels), sand grip, prop collisions; tub fluid still custom |
 | **Liquid** | MAC shallow-water grid in tub frame, mass conservation, weir spills, chassis coupling |
 | **Spills** | Ballistic droplets, ground puddles, popups, skids, dust puffs |
 | **Render** | Isometric art pass + WebGL ink post (edges, cel bands, world hatching, grain); 2D fallback |
@@ -227,7 +227,7 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–30 are shipped on this line (v0.31.0).
+Phases 0–30 are shipped on this line (v0.31.0). Vehicle integration moved to Rapier3D raycast suspension in v0.32.0.
 
 The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time, plus a ghost split when a best is racing beside you. The slosh band uses hysteresis so calm/moving/lip do not chatter. Checkpoints pop. Contract and time-trial cargo bars warn before they fail. Pause opens a card. Spills and lip/danger edges announce to an aria-live region. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
 
@@ -1057,5 +1057,6 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.29.x** | Phase 28 |
 | **0.30.x** | Phase 29 |
 | **0.31.x** | Phase 30 |
+| **0.32.x** | Rapier3D raycast vehicle (post–Phase 30) |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.
