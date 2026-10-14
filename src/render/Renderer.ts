@@ -547,8 +547,47 @@ export class Renderer {
 		inView: (x: number, y: number, r: number) => boolean,
 	) {
 		const ctx = this.ctx;
+		const dunes: Decor[] = [];
+		const flat: Decor[] = [];
 		for (const d of track.groundDecor) {
-			if (!inView(d.x, d.y, d.r * 2)) continue;
+			if (!inView(d.x, d.y, d.r * 2.4)) continue;
+			if (d.kind === "patch" && d.r > 5.5) dunes.push(d);
+			else flat.push(d);
+		}
+		// Low sand dunes as extruded ellipses so the desert reads in 3D.
+		for (const d of dunes) {
+			const h = 0.35 + d.seed * 0.55;
+			const rx = d.r;
+			const ry = d.r * 0.55;
+			const c = Math.cos(d.rot);
+			const sn = Math.sin(d.rot);
+			const oval = (k: number): Vec2[] => {
+				const pts: Vec2[] = [];
+				for (let i = 0; i < 10; i++) {
+					const a = (i / 10) * Math.PI * 2;
+					const lx = Math.cos(a) * rx * k;
+					const ly = Math.sin(a) * ry * k;
+					pts.push({
+						x: d.x + lx * c - ly * sn,
+						y: d.y + lx * sn + ly * c,
+					});
+				}
+				return pts;
+			};
+			this.prism(
+				oval(1),
+				d.z,
+				d.z + h,
+				{
+					top: d.seed < 0.5 ? C.patchLight : "#f0c484",
+					lit: d.seed < 0.5 ? C.patchDark : C.patchLight,
+					shade: "#b88448",
+				},
+				0.04,
+				0.72,
+			);
+		}
+		for (const d of flat) {
 			this.planeAt(d.z);
 			switch (d.kind) {
 				case "patch":
@@ -558,21 +597,18 @@ export class Renderer {
 					ctx.fill();
 					break;
 				case "pebble":
-					ctx.beginPath();
-					ctx.ellipse(d.x, d.y, d.r, d.r * 0.7, d.rot, 0, Math.PI * 2);
-					ctx.fillStyle = "#8d7458";
-					ctx.fill();
-					ctx.lineWidth = 0.05;
-					ctx.strokeStyle = INK;
-					ctx.stroke();
+					this.cylinder(
+						d.x,
+						d.y,
+						d.r,
+						d.z,
+						d.z + 0.12 + d.seed * 0.18,
+						{ top: "#c6ad8b", lit: "#8d7458", shade: "#5c4a36" },
+						0.04,
+					);
 					break;
 				case "tuft":
-					ctx.save();
-					ctx.translate(d.x, d.y);
-					ctx.strokeStyle = "#6e7f2c";
-					ctx.lineWidth = 0.08;
-					ctx.stroke(this.cached(d, () => this.tuftPath(d)));
-					ctx.restore();
+					this.drawTuft3d(d);
 					break;
 				case "bones":
 					this.drawBone(d);
@@ -591,22 +627,31 @@ export class Renderer {
 		}
 	}
 
-	private tuftPath(d: Decor): Path2D {
+	/** Sparse grass blades with height so tufts cast a silhouette. */
+	private drawTuft3d(d: Decor) {
 		const rand = mulberry32(Math.floor(d.seed * 1e9));
-		const p = new Path2D();
-		const blades = 5 + Math.floor(rand() * 4);
+		const blades = 4 + Math.floor(rand() * 3);
 		for (let i = 0; i < blades; i++) {
-			const a = d.rot + (i / blades) * Math.PI * 2 + rand() * 0.4;
-			const len = d.r * (1.2 + rand());
-			p.moveTo(0, 0);
-			p.quadraticCurveTo(
-				Math.cos(a) * len * 0.5 + 0.05,
-				Math.sin(a) * len * 0.5,
-				Math.cos(a) * len,
-				Math.sin(a) * len,
+			const a = d.rot + (i / blades) * Math.PI * 2 + rand() * 0.45;
+			const len = d.r * (1.1 + rand());
+			const tipX = d.x + Math.cos(a) * len;
+			const tipY = d.y + Math.sin(a) * len;
+			const h = 0.25 + rand() * 0.45;
+			const n = { x: -Math.sin(a) * 0.04, y: Math.cos(a) * 0.04 };
+			this.prism(
+				[
+					{ x: d.x + n.x, y: d.y + n.y },
+					{ x: tipX + n.x, y: tipY + n.y },
+					{ x: tipX - n.x, y: tipY - n.y },
+					{ x: d.x - n.x, y: d.y - n.y },
+				],
+				d.z,
+				d.z + h,
+				{ top: "#8a9a3a", lit: "#6e7f2c", shade: "#3f4a18" },
+				0.03,
+				0.35,
 			);
 		}
-		return p;
 	}
 
 	private crackPath(d: Decor): Path2D {
@@ -735,6 +780,36 @@ export class Renderer {
 		band(0.7, INK);
 		band(0.35, C.shoulder);
 		band(0, C.asphalt);
+		// Raised berms / cut banks so canyon and boulder routes read as 3D corridors.
+		for (let i = 0; i < n - 1; i += 2) {
+			if (!visible(i) && !visible(i + 1)) continue;
+			const grade = Math.abs(track.gradeAt(samples[i].along));
+			const bermH =
+				track.archetype === "canyon"
+					? 0.55 + grade * 4
+					: track.archetype === "boulder"
+						? 0.4 + grade * 2.5
+						: 0.18;
+			if (bermH < 0.2) continue;
+			for (const edge of [track.leftEdge, track.rightEdge] as const) {
+				const e0 = edge[i];
+				const e1 = edge[Math.min(n - 1, i + 1)];
+				const c0 = track.centerline[i];
+				const c1 = track.centerline[Math.min(n - 1, i + 1)];
+				const out0 = this.widen(c0, e0, 1.1);
+				const out1 = this.widen(c1, e1, 1.1);
+				const z0 = zAt(i, e0);
+				const z1 = zAt(Math.min(n - 1, i + 1), e1);
+				this.prism(
+					[e0, e1, out1, out0],
+					Math.min(z0, z1),
+					Math.min(z0, z1) + bermH,
+					{ top: "#c99458", lit: "#b07a42", shade: "#7a5230" },
+					0.035,
+					0.92,
+				);
+			}
+		}
 		const crease = (i: number) => {
 			const s = samples[i].along;
 			if (Math.abs(track.gradeAt(s)) > 0.045) return true;
@@ -992,23 +1067,35 @@ export class Renderer {
 				const base = this.rockBase(o);
 				const h = this.rockHeight(o);
 				const colors = { top: C.rock, lit: C.rock, shade: C.rockShade };
-				this.prism(base, o.z, o.z + h * 0.62, colors, 0.09, 1.08);
+				this.prism(base, o.z, o.z + h * 0.55, colors, 0.09, 1.1);
 				this.prism(
-					shrink(base, 0.78),
-					o.z + h * 0.4,
+					shrink(base, 0.82),
+					o.z + h * 0.35,
+					o.z + h * 0.82,
+					colors,
+					0.08,
+					0.7,
+				);
+				this.prism(
+					shrink(base, 0.62),
+					o.z + h * 0.55,
 					o.z + h,
 					{ ...colors, top: C.rockTop },
-					0.08,
-					0.55,
+					0.07,
+					0.48,
 					() => {
 						const ctx = this.ctx;
 						const c = centroid(base);
-						const tip = o.shape[0];
+						const tip = o.shape[0] ?? { x: o.r, y: 0 };
 						ctx.strokeStyle = INK;
 						ctx.lineWidth = 0.05;
 						ctx.beginPath();
 						ctx.moveTo(c.x - tip.x * 0.15, c.y - tip.y * 0.15);
 						ctx.lineTo(c.x + tip.x * 0.45, c.y + tip.y * 0.45);
+						ctx.stroke();
+						ctx.beginPath();
+						ctx.moveTo(c.x + tip.y * 0.2, c.y - tip.x * 0.2);
+						ctx.lineTo(c.x - tip.y * 0.35, c.y + tip.x * 0.35);
 						ctx.stroke();
 					},
 				);
@@ -1423,6 +1510,120 @@ export class Renderer {
 					shade: "#8c2219",
 				},
 				0.04,
+			);
+			// Side mirror
+			const mirrorLocal = scaledBodyPoint(
+				{ x: 0.92, y: side * 0.92 },
+				CAR_SPEC.a,
+				CAR_SPEC.b,
+			);
+			const mirror = toWorld(mirrorLocal);
+			const mPitch = -mirrorLocal.x * car.pitch;
+			this.cylinder(
+				mirror.x,
+				mirror.y,
+				0.07,
+				car.z + BED_TOP + 0.35 + mPitch,
+				car.z + BED_TOP + 0.62 + mPitch,
+				{ top: "#3a322c", lit: "#5a5248", shade: "#1f1812" },
+				0.03,
+			);
+			this.cylinder(
+				mirror.x,
+				mirror.y,
+				0.11,
+				car.z + BED_TOP + 0.52 + mPitch,
+				car.z + BED_TOP + 0.68 + mPitch,
+				{ top: "#9ad4e0", lit: C.glass, shade: C.glassShade },
+				0.025,
+			);
+			// Running board / rock rail
+			const board = [
+				{ x: -0.55, y: side * 0.9 },
+				{ x: 1.05, y: side * 0.9 },
+				{ x: 1.05, y: side * 1.02 },
+				{ x: -0.55, y: side * 1.02 },
+			].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
+			this.prism(
+				board.map(toWorld),
+				car.z + 0.28,
+				car.z + 0.42,
+				{ top: "#3a322c", lit: "#4a4036", shade: "#1c1510" },
+				0.04,
+				1,
+				undefined,
+				(i) => -board[i].x * car.pitch,
+			);
+			// Mud flap behind rear axle
+			const flap = [
+				{ x: -CAR_SPEC.b - 0.35, y: side * 0.55 },
+				{ x: -CAR_SPEC.b - 0.12, y: side * 0.55 },
+				{ x: -CAR_SPEC.b - 0.12, y: side * 0.82 },
+				{ x: -CAR_SPEC.b - 0.35, y: side * 0.82 },
+			].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
+			this.prism(
+				flap.map(toWorld),
+				car.z + 0.18,
+				car.z + 0.55,
+				{ top: "#2a1d14", lit: "#3a2820", shade: "#140e0a" },
+				0.035,
+				1,
+				undefined,
+				(i) => -flap[i].x * car.pitch,
+			);
+		}
+
+		// Exhaust tip under the bed
+		const exhaustLocal = scaledBodyPoint(
+			{ x: -2.05, y: 0.55 },
+			CAR_SPEC.a,
+			CAR_SPEC.b,
+		);
+		const exhaust = toWorld(exhaustLocal);
+		const exPitch = -exhaustLocal.x * car.pitch;
+		this.cylinder(
+			exhaust.x,
+			exhaust.y,
+			0.06,
+			car.z + 0.22 + exPitch,
+			car.z + 0.34 + exPitch,
+			{ top: "#8a8478", lit: "#6a6458", shade: "#2e2a24" },
+			0.03,
+		);
+
+		// Cab light bar
+		const lightBar = [
+			{ x: 0.05, y: -0.42 },
+			{ x: 0.05, y: 0.42 },
+			{ x: 0.22, y: 0.42 },
+			{ x: 0.22, y: -0.42 },
+		].map((p) => scaledBodyPoint(p, CAR_SPEC.a, CAR_SPEC.b));
+		this.prism(
+			lightBar.map(toWorld),
+			car.z + CAB_TOP,
+			car.z + CAB_TOP + 0.12,
+			{ top: "#2a1d14", lit: "#3a322c", shade: "#15100c" },
+			0.04,
+			1,
+			undefined,
+			(i) => -lightBar[i].x * car.pitch,
+		);
+		for (const y of [-0.28, 0, 0.28]) {
+			const beaconLocal = scaledBodyPoint(
+				{ x: 0.14, y },
+				CAR_SPEC.a,
+				CAR_SPEC.b,
+			);
+			const beacon = toWorld(beaconLocal);
+			const bPitch = -beaconLocal.x * car.pitch;
+			this.cylinder(
+				beacon.x,
+				beacon.y,
+				0.06,
+				car.z + CAB_TOP + 0.08 + bPitch,
+				car.z + CAB_TOP + 0.2 + bPitch,
+				{ top: "#ffe27a", lit: "#ffc451", shade: "#c9a24a" },
+				0.02,
 			);
 		}
 

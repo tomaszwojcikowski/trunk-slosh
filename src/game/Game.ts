@@ -1,6 +1,7 @@
 import { AudioBus, rollGainFor } from "../audio/AudioBus";
 import { airborneMix } from "../audio/airborneMix";
 import { lipAccentGain, sloshCutoffFor } from "../audio/cargoVoice";
+import { musicMixFor, nearMissFor } from "../audio/dynamicMusic";
 import { Input } from "../input/Input";
 import type { Vec2 } from "../math/vec2";
 import { FluidLayer } from "../physics/FluidLayer";
@@ -364,6 +365,7 @@ export class Game {
 	private applySettingsToRuntime() {
 		this.inkEnabled = this.settings.ink;
 		this.audio.enabled = this.settings.sfx;
+		this.audio.music = this.settings.music;
 		this.audio.volume = this.settings.masterVolume;
 		this.input.keyboardRampMul = this.settings.keyboardRamp;
 		this.input.touchSensitivityMul = this.settings.touchSensitivity;
@@ -424,6 +426,7 @@ export class Game {
 	private bindSettings(root: HTMLElement) {
 		const ink = root.querySelector<HTMLInputElement>("#set-ink")!;
 		const sfx = root.querySelector<HTMLInputElement>("#set-sfx")!;
+		const music = root.querySelector<HTMLInputElement>("#set-music")!;
 		const volume = root.querySelector<HTMLInputElement>("#set-volume")!;
 		const motion = root.querySelector<HTMLInputElement>("#set-motion")!;
 		const punch = root.querySelector<HTMLInputElement>("#set-punch")!;
@@ -434,6 +437,7 @@ export class Game {
 		const sync = () => {
 			ink.checked = this.settings.ink;
 			sfx.checked = this.settings.sfx;
+			music.checked = this.settings.music;
 			volume.value = String(this.settings.masterVolume);
 			motion.checked = this.settings.reducedMotion;
 			punch.checked = this.settings.cameraPunch;
@@ -513,6 +517,7 @@ export class Game {
 		const save = () => {
 			this.settings.ink = ink.checked;
 			this.settings.sfx = sfx.checked;
+			this.settings.music = music.checked;
 			this.settings.masterVolume = Number(volume.value);
 			this.settings.reducedMotion = motion.checked;
 			this.settings.cameraPunch = punch.checked;
@@ -531,6 +536,7 @@ export class Game {
 		for (const el of [
 			ink,
 			sfx,
+			music,
 			volume,
 			motion,
 			punch,
@@ -1002,8 +1008,21 @@ export class Game {
 				);
 			}
 		});
-		if (snap.impact > 25 && !this.settings.reducedMotion)
-			this.shake = Math.min(1, this.shake + snap.impact / 120);
+		if (snap.impact > 25) {
+			if (!this.settings.reducedMotion)
+				this.shake = Math.min(1, this.shake + snap.impact / 120);
+			const bursts = snap.impactKind === "barrel" ? 5 : 3;
+			for (let i = 0; i < bursts; i++) {
+				this.particles.addPuff(
+					snap.pos.x + (Math.random() - 0.5) * 1.4,
+					snap.pos.y + (Math.random() - 0.5) * 1.4,
+					snap.vel.x * -0.1 + (Math.random() - 0.5) * 2.4,
+					snap.vel.y * -0.1 + (Math.random() - 0.5) * 2.4,
+					0.4 + Math.random() * 0.45,
+					snap.z + 0.2,
+				);
+			}
+		}
 		this.audio.impactThud(snap.impact, snap.impactKind);
 		const skid = snap.wheels.reduce((m, w) => Math.max(m, w.skid), 0);
 		this.audio.tireScrub(skid);
@@ -1018,6 +1037,26 @@ export class Game {
 		this.audio.surfaceRoll(snap.airborne ? 0 : snap.speed, sandy);
 		this.audio.surfaceWind(snap.speed, snap.airborne);
 		this.audio.engineLoad(snap.speed, mix.throttle);
+		const threat = cargoThreatLevel(
+			this.fluid.remainingRatio(),
+			this.runConfig.mode,
+		);
+		let clearance = Number.POSITIVE_INFINITY;
+		for (const o of this.track.obstacles) {
+			const gap = Math.hypot(o.x - snap.pos.x, o.y - snap.pos.y) - o.r - 1.1;
+			if (gap < clearance) clearance = gap;
+		}
+		this.audio.musicTick(
+			musicMixFor({
+				speed: snap.speed,
+				slosh: this.fluid.sloshSpeed(),
+				threat,
+				nearMiss: nearMissFor(clearance),
+				airborne: snap.airborne,
+				impact: snap.impact,
+				active: this.settings.music && this.phase === "driving" && !this.paused,
+			}),
+		);
 		this.pitchSettle = settlePitch(
 			this.pitchSettle.pitch,
 			this.pitchSettle.velocity,
@@ -1203,6 +1242,7 @@ export class Game {
 		if (steps === MAX_STEPS) this.accum = 0;
 
 		const snap = this.vehicle.snapshot(this.fluid.mass());
+		this.vehicle.syncProps(this.track);
 		const drawSnap: VehicleSnapshot = {
 			...snap,
 			pitch: this.pitchSettle.pitch,

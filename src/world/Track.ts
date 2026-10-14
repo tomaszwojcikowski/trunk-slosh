@@ -357,7 +357,7 @@ export class Track {
 					shape.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr });
 				}
 			}
-			const dynamic = kind === "barrel" && dynamicBarrels < 8;
+			const dynamic = kind === "barrel" && dynamicBarrels < 14;
 			if (dynamic) dynamicBarrels++;
 			this.obstacles.push({
 				kind,

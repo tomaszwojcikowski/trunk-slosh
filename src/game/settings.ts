@@ -3,6 +3,8 @@ export type QualityTier = "low" | "medium" | "high";
 export type GameSettings = {
 	ink: boolean;
 	sfx: boolean;
+	/** Adaptive score layers (bed / drive / tension / air / hit). */
+	music: boolean;
 	/** 0…1 master mix level. 1 matches today's audible peak via the bus. */
 	masterVolume: number;
 	reducedMotion: boolean;
@@ -18,6 +20,7 @@ const KEY = "trunk-slosh-settings";
 const DEFAULTS: GameSettings = {
 	ink: true,
 	sfx: true,
+	music: true,
 	masterVolume: 1,
 	reducedMotion: false,
 	touchSensitivity: 1,
