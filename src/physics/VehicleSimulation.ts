@@ -137,6 +137,9 @@ export class VehicleSimulation {
 	private vehicle: ReturnType<World["createVehicleController"]> | null = null;
 	private chassisCollider: { setMass(m: number): void } | null = null;
 	private kindByCollider = new Map<number, ObstacleKind | "chassis">();
+	/** Dynamic props whose Rapier pose is written back onto `track.obstacles`. */
+	private dynamicProps: { index: number; body: RigidBody }[] = [];
+	private bodyByCollider = new Map<number, RigidBody>();
 	private steerAngle = 0;
 	private accelLocal: Vec2 = { x: 0, y: 0 };
 	private alpha = 0;
@@ -170,6 +173,8 @@ export class VehicleSimulation {
 		this.vehicle = null;
 		this.chassisCollider = null;
 		this.kindByCollider.clear();
+		this.dynamicProps = [];
+		this.bodyByCollider.clear();
 
 		const world = new RAPIER.World({ x: 0, y: -G, z: 0 });
 		world.timestep = 1 / 120;
@@ -356,7 +361,7 @@ export class VehicleSimulation {
 	private buildObstacles(track: Track) {
 		const RAPIER = getRapier();
 		const world = this.world!;
-		for (const o of track.obstacles) {
+		track.obstacles.forEach((o, index) => {
 			const dynamic = Boolean(o.dynamic && o.kind === "barrel");
 			const body = world.createRigidBody(
 				(dynamic
@@ -364,15 +369,33 @@ export class VehicleSimulation {
 					: RAPIER.RigidBodyDesc.fixed()
 				)
 					.setTranslation(o.x, o.z + o.r, o.y)
-					.setCcdEnabled(dynamic),
+					.setCcdEnabled(dynamic)
+					.setLinearDamping(dynamic ? 0.35 : 0)
+					.setAngularDamping(dynamic ? 0.55 : 0),
 			);
 			const desc = RAPIER.ColliderDesc.ball(o.r)
 				.setFriction(dynamic ? 0.55 : 0.5)
-				.setRestitution(dynamic ? 0.35 : 0.2)
+				.setRestitution(dynamic ? 0.45 : 0.2)
 				.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-			if (dynamic) desc.setDensity(180);
+			if (dynamic) desc.setDensity(220);
 			const col = world.createCollider(desc, body);
 			this.kindByCollider.set(col.handle, o.kind);
+			this.bodyByCollider.set(col.handle, body);
+			if (dynamic) this.dynamicProps.push({ index, body });
+		});
+	}
+
+	/** Copy rolling barrels (and any other dynamic props) back into the track for render. */
+	syncProps(track: Track) {
+		for (const prop of this.dynamicProps) {
+			const o = track.obstacles[prop.index];
+			if (!o) continue;
+			const t = prop.body.translation();
+			if (!Number.isFinite(t.x) || !Number.isFinite(t.z)) continue;
+			o.x = t.x;
+			o.y = t.z;
+			o.z = Math.max(0, t.y - o.r);
+			o.rot = gameAngleFromYaw(yawFromQuat(prop.body.rotation()));
 		}
 	}
 
@@ -544,18 +567,43 @@ export class VehicleSimulation {
 
 		const events = this.eventQueue!;
 		world.step(events);
+		const speedBeforeHit = Math.hypot(vWorld.x, vWorld.y);
 		events.drainCollisionEvents((h1, h2, started) => {
 			if (!started) return;
 			const k1 = this.kindByCollider.get(h1);
 			const k2 = this.kindByCollider.get(h2);
+			const otherHandle = k1 === "chassis" ? h2 : k2 === "chassis" ? h1 : -1;
 			const other = k1 === "chassis" ? k2 : k2 === "chassis" ? k1 : undefined;
 			if (!other || other === "chassis" || !HIT_KINDS.has(other)) return;
 			this.impactKind = other as ObstacleKind;
+			const hit = Math.min(90, 18 + speedBeforeHit * 4.5);
+			this.impact = Math.max(this.impact, hit);
 			if (other === "cactus") {
 				const v = chassis.linvel();
-				chassis.setLinvel({ x: v.x * 0.82, y: v.y, z: v.z * 0.82 }, true);
+				chassis.setLinvel({ x: v.x * 0.78, y: v.y, z: v.z * 0.78 }, true);
 				const w = chassis.angvel();
-				chassis.setAngvel({ x: w.x, y: w.y * 0.9, z: w.z }, true);
+				chassis.setAngvel({ x: w.x, y: w.y * 0.85, z: w.z }, true);
+			} else if (other === "rock" || other === "tires") {
+				const v = chassis.linvel();
+				chassis.setLinvel({ x: v.x * 0.88, y: v.y, z: v.z * 0.88 }, true);
+			} else if (other === "barrel") {
+				const body = this.bodyByCollider.get(otherHandle);
+				if (body) {
+					const v = chassis.linvel();
+					const kick = 0.55 + Math.min(1.2, speedBeforeHit * 0.08);
+					body.applyImpulse(
+						{ x: v.x * kick, y: 1.8 + speedBeforeHit * 0.12, z: v.z * kick },
+						true,
+					);
+					body.applyTorqueImpulse(
+						{
+							x: (Math.random() - 0.5) * 4,
+							y: 2.5,
+							z: (Math.random() - 0.5) * 4,
+						},
+						true,
+					);
+				}
 			}
 		});
 
