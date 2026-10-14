@@ -167,7 +167,7 @@ describe("road grades", () => {
 		expect(fluid.centroidLocal().y).toBeLessThan(y0);
 	});
 
-	it("pulls a parked canyon truck downhill without a Matter gravity term", () => {
+	it("pulls a parked canyon truck downhill under Rapier gravity", () => {
 		const track = new Track(1, { archetype: "canyon" });
 		const vehicle = new VehicleSimulation();
 		const fluid = new FluidLayer();

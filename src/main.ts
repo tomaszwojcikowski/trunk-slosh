@@ -1,5 +1,8 @@
 import "./style.css";
 import { Game } from "./game/Game";
+import { initRapier } from "./physics/rapierInit";
+
+await initRapier();
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 

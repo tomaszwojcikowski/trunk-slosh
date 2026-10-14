@@ -1,6 +1,6 @@
 import type { Vec2 } from "../math/vec2";
 
-/** Gravity used by the grade, bank, and ramp models (m/s²). Matter's own gravity stays at zero. */
+/** Gravity used by the grade, bank, and ramp models (m/s²). Rapier world gravity matches this. */
 export const GRADE_G = 9.81;
 
 export const CANYON_AMP = 2.2;

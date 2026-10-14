@@ -31,7 +31,7 @@ export type Obstacle = {
 	rot: number;
 	/** Rock outline (relative to x,y); empty for round props */
 	shape: Vec2[];
-	/** Rolling barrel (Matter dynamic body, capped count) */
+	/** Rolling barrel (Rapier dynamic body, capped count) */
 	dynamic?: boolean;
 	/** Local ground height (m) */
 	z: number;
