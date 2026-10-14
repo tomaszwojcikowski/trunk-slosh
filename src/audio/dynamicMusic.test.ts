@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+	bassNoteHz,
+	leadNoteHz,
 	type MusicDrivers,
+	musicBpmFor,
 	musicGroupGainFor,
 	musicMixFor,
 	nearMissFor,
@@ -22,18 +25,24 @@ describe("dynamic music mix", () => {
 		const mix = musicMixFor({ ...base, speed: 20, active: false });
 		expect(mix.bed).toBe(0);
 		expect(mix.drive).toBe(0);
-		expect(mix.tension).toBe(0);
-		expect(mix.air).toBe(0);
-		expect(mix.hit).toBe(0);
+		expect(mix.bass).toBe(0);
+		expect(mix.lead).toBe(0);
+		expect(mix.bpm).toBe(0);
+		expect(mix.intensity).toBe(0);
 	});
 
-	it("keeps a bed under a parked truck and opens drive with speed", () => {
+	it("keeps a living groove when parked and opens with speed", () => {
 		const parked = musicMixFor(base);
-		expect(parked.bed).toBeGreaterThan(0.5);
-		expect(parked.drive).toBe(0);
+		expect(parked.bed).toBeGreaterThan(0.6);
+		expect(parked.drive).toBeGreaterThan(0.15);
+		expect(parked.bass).toBeGreaterThan(0.3);
+		expect(parked.bpm).toBeGreaterThanOrEqual(88);
 		const cruise = musicMixFor({ ...base, speed: 18 });
 		expect(cruise.drive).toBeGreaterThan(parked.drive);
-		expect(cruise.drive).toBeLessThanOrEqual(1);
+		expect(cruise.bass).toBeGreaterThan(parked.bass);
+		expect(cruise.lead).toBeGreaterThan(parked.lead);
+		expect(cruise.bpm).toBeGreaterThan(parked.bpm);
+		expect(musicBpmFor(0, true)).toBeLessThan(musicBpmFor(30, true));
 	});
 
 	it("raises tension from slosh, cargo threat, and near misses", () => {
@@ -50,14 +59,16 @@ describe("dynamic music mix", () => {
 		expect(sloshy.tension).toBeGreaterThan(calm.tension);
 		expect(danger.tension).toBeGreaterThan(calm.tension);
 		expect(graze.tension).toBeGreaterThan(calm.tension);
+		expect(danger.intensity).toBeGreaterThan(calm.intensity);
 	});
 
-	it("lifts the air layer and softens drive while airborne", () => {
+	it("lifts the air layer and softens the groove while airborne", () => {
 		const ground = musicMixFor({ ...base, speed: 16 });
 		const air = musicMixFor({ ...base, speed: 16, airborne: true });
 		expect(air.air).toBeGreaterThan(0);
 		expect(ground.air).toBe(0);
 		expect(air.drive).toBeLessThan(ground.drive);
+		expect(air.bass).toBeLessThan(ground.bass);
 	});
 
 	it("kicks the hit layer only above the impact threshold", () => {
@@ -66,9 +77,15 @@ describe("dynamic music mix", () => {
 		expect(musicMixFor({ ...base, impact: 200 }).hit).toBeLessThanOrEqual(1);
 	});
 
-	it("keeps music under SFX headroom", () => {
-		expect(musicGroupGainFor(1)).toBeCloseTo(0.22, 6);
+	it("steps bass and lead through the desert scale", () => {
+		expect(bassNoteHz(0)).toBeLessThan(bassNoteHz(2));
+		expect(leadNoteHz(0, false)).toBeGreaterThan(bassNoteHz(0));
+		expect(leadNoteHz(1, true)).not.toBe(leadNoteHz(1, false));
+	});
+
+	it("keeps music audible under SFX headroom", () => {
+		expect(musicGroupGainFor(1)).toBeCloseTo(0.42, 6);
 		expect(musicGroupGainFor(0)).toBe(0);
-		expect(musicGroupGainFor(2)).toBeCloseTo(0.22, 6);
+		expect(musicGroupGainFor(2)).toBeCloseTo(0.42, 6);
 	});
 });

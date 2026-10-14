@@ -17,31 +17,55 @@ export type MusicDrivers = {
 	airborne: boolean;
 	/** Latest impact magnitude (0 when calm). */
 	impact: number;
-	/** False on intro / when music is muted in settings. */
+	/** False when music is muted or the run is paused/finished. */
 	active: boolean;
 };
 
 /** Normalized layer gains (0…1) before the bus applies headroom. */
 export type MusicMix = {
-	/** Soft desert pad — always under the bed when active. */
+	/** Soft desert pad under everything. */
 	bed: number;
-	/** Pulse that opens with road speed. */
+	/** Groove / pulse weight that opens with road speed. */
 	drive: number;
-	/** Dissonant lift from slosh and cargo threat. */
+	/** Bass presence — follows the pulse. */
+	bass: number;
+	/** Melodic ostinato activity. */
+	lead: number;
+	/** Dissonant lift from slosh, threat, and near-miss. */
 	tension: number;
 	/** Open air lift while airborne. */
 	air: number;
 	/** Short intensity kick after a hard hit. */
 	hit: number;
+	/** Overall heat 0…1 — opens filters and hat energy. */
+	intensity: number;
+	/** Tempo for the score sequencer (BPM). */
+	bpm: number;
 };
 
 const SILENT: MusicMix = {
 	bed: 0,
 	drive: 0,
+	bass: 0,
+	lead: 0,
 	tension: 0,
 	air: 0,
 	hit: 0,
+	intensity: 0,
+	bpm: 0,
 };
+
+/** D natural minor desert palette (Hz). */
+export const MUSIC_ROOT = 73.42; // D2
+
+/** Bass ostinato degrees relative to MUSIC_ROOT (×2^n/12). */
+export const BASS_STEPS = [0, 0, 7, 5, 0, 3, 7, 10] as const;
+
+/** Lead arpeggio degrees (one octave up). */
+export const LEAD_STEPS = [12, 15, 19, 22, 19, 15, 17, 12] as const;
+
+/** Darker lead when tension is high. */
+export const LEAD_TENSE_STEPS = [12, 13, 15, 18, 15, 13, 16, 12] as const;
 
 function clamp01(n: number): number {
 	return Math.max(0, Math.min(1, n));
@@ -64,6 +88,32 @@ export function nearMissFor(clearance: number, horizon = 4.5): number {
 	return clamp01(1 - clearance / horizon);
 }
 
+/** Chase tempo: a living pulse even when parked, climbs with speed. */
+export function musicBpmFor(speed: number, active: boolean): number {
+	if (!active) return 0;
+	const s = Math.max(0, speed);
+	return 88 + Math.min(52, s * 1.65);
+}
+
+/** MIDI-style degree → Hz from MUSIC_ROOT. */
+export function degreeHz(degree: number, root = MUSIC_ROOT): number {
+	return root * 2 ** (degree / 12);
+}
+
+export function bassNoteHz(step: number): number {
+	const deg =
+		BASS_STEPS[
+			((step % BASS_STEPS.length) + BASS_STEPS.length) % BASS_STEPS.length
+		];
+	return degreeHz(deg);
+}
+
+export function leadNoteHz(step: number, tense: boolean): number {
+	const table = tense ? LEAD_TENSE_STEPS : LEAD_STEPS;
+	const deg = table[((step % table.length) + table.length) % table.length];
+	return degreeHz(deg);
+}
+
 /**
  * Map gameplay drivers to music layer gains.
  * Pure and side-effect free so tests can pin the curve without Web Audio.
@@ -75,22 +125,41 @@ export function musicMixFor(d: MusicDrivers): MusicMix {
 	const slosh = Math.max(0, d.slosh);
 	const impact = Math.max(0, d.impact);
 	const near = clamp01(d.nearMiss);
+	const threat = threatBias(d.threat);
+	const bpm = musicBpmFor(speed, true);
 
-	const bed = 0.55 + Math.min(0.35, speed * 0.012);
-	const drive =
-		speed < 1.5 ? 0 : clamp01((speed - 1.5) / 28) * (d.airborne ? 0.35 : 1);
+	const cruise = clamp01(speed / 22);
+	const bed = 0.72 + cruise * 0.28;
+	const drive = 0.22 + cruise * 0.78;
+	const bass = 0.35 + cruise * 0.65;
+	const lead = clamp01(0.12 + cruise * 0.75 + threat * 0.15 + near * 0.2);
 	const tension = clamp01(
-		threatBias(d.threat) * 0.55 +
+		threat * 0.55 +
 			(slosh < 0.12 ? 0 : Math.min(1, (slosh - 0.12) * 0.55)) * 0.7 +
-			near * 0.85,
+			near * 0.9,
 	);
-	const air = d.airborne ? clamp01(0.45 + Math.min(speed, 24) * 0.018) : 0;
-	const hit = impact < 25 ? 0 : clamp01((impact - 25) / 70);
+	const air = d.airborne ? clamp01(0.55 + Math.min(speed, 24) * 0.02) : 0;
+	const hit = impact < 25 ? 0 : clamp01((impact - 25) / 55);
+	const intensity = clamp01(
+		cruise * 0.55 + tension * 0.35 + air * 0.2 + hit * 0.25,
+	);
 
-	return { bed, drive, tension, air, hit };
+	// Airborne: keep pulse alive but thin the groove so the air pad reads.
+	const airMul = d.airborne ? 0.45 : 1;
+	return {
+		bed,
+		drive: drive * airMul,
+		bass: bass * (d.airborne ? 0.55 : 1),
+		lead: lead * (d.airborne ? 0.7 : 1),
+		tension,
+		air,
+		hit,
+		intensity,
+		bpm,
+	};
 }
 
-/** Bus headroom for the music group (under SFX). */
+/** Bus headroom for the music group (under SFX, but audible). */
 export function musicGroupGainFor(volume: number): number {
-	return Math.max(0, Math.min(1, volume)) * 0.22;
+	return Math.max(0, Math.min(1, volume)) * 0.42;
 }

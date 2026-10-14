@@ -1,6 +1,12 @@
 /** Web Audio mix. The context is created only inside a user gesture. */
 
-import { type MusicMix, musicGroupGainFor } from "./dynamicMusic";
+import {
+	bassNoteHz,
+	leadNoteHz,
+	MUSIC_ROOT,
+	type MusicMix,
+	musicGroupGainFor,
+} from "./dynamicMusic";
 import { impactVoiceFor, windGainFor } from "./windVoice";
 
 /** Loud enough to read as an engine on laptop speakers, silent when parked. */
@@ -77,10 +83,10 @@ export function softGainRamp(
 
 type Loop = { filter: BiquadFilterNode; gain: GainNode };
 
-type MusicLayer = {
+type ScoreVoice = {
 	osc: OscillatorNode;
 	gain: GainNode;
-	filter?: BiquadFilterNode;
+	filter: BiquadFilterNode;
 };
 
 export class AudioBus {
@@ -103,11 +109,16 @@ export class AudioBus {
 	private roll: Loop | null = null;
 	private slosh: Loop | null = null;
 	private wind: Loop | null = null;
-	private musicBed: MusicLayer | null = null;
-	private musicDrive: MusicLayer | null = null;
-	private musicTension: MusicLayer | null = null;
-	private musicAir: MusicLayer | null = null;
+	private padGain: GainNode | null = null;
+	private padFilter: BiquadFilterNode | null = null;
+	private bass: ScoreVoice | null = null;
+	private pulse: ScoreVoice | null = null;
+	private lead: ScoreVoice | null = null;
+	private tension: ScoreVoice | null = null;
+	private air: ScoreVoice | null = null;
+	private hat: Loop | null = null;
 	private musicHit: GainNode | null = null;
+	private musicKick: OscillatorNode | null = null;
 	private noise: AudioBuffer | null = null;
 	private armed = false;
 	private _enabled = true;
@@ -118,6 +129,8 @@ export class AudioBus {
 	private lastImpact = -1;
 	private lastSlosh = -1;
 	private lastMusicHit = -1;
+	private musicBeat = 0;
+	private nextMusicBeat = -1;
 	private welcomed = false;
 
 	get enabled() {
@@ -186,51 +199,170 @@ export class AudioBus {
 		this.musicTick({
 			bed: 0,
 			drive: 0,
+			bass: 0,
+			lead: 0,
 			tension: 0,
 			air: 0,
 			hit: 0,
+			intensity: 0,
+			bpm: 0,
 		});
 	}
 
 	/**
-	 * Adaptive score layers. Gains come from `musicMixFor`; the bus applies
-	 * music headroom and soft ramps so layers crossfade without clicks.
+	 * Adaptive chase score. Continuous voices follow `musicMixFor`; a beat
+	 * clock steps bass / lead / pulse / hats so the bed is never a static hum.
 	 */
 	musicTick(mix: MusicMix) {
 		const ctx = this.ensureMusic();
 		if (
 			!ctx ||
 			!this.musicBus ||
-			!this.musicBed ||
-			!this.musicDrive ||
-			!this.musicTension ||
-			!this.musicAir ||
+			!this.padGain ||
+			!this.bass ||
+			!this.pulse ||
+			!this.lead ||
+			!this.tension ||
+			!this.air ||
+			!this.hat ||
 			!this.musicHit
 		)
 			return;
 		const t = ctx.currentTime;
 		const group = musicGroupGainFor(this._volume);
 		softGainRamp(this.musicBus.gain, group, t, 0.1);
-		softGainRamp(this.musicBed.gain.gain, mix.bed * 0.55, t, 0.12);
-		softGainRamp(this.musicDrive.gain.gain, mix.drive * 0.7, t, 0.09);
-		this.musicDrive.filter?.frequency.setTargetAtTime(
-			220 + mix.drive * 480,
+
+		if (mix.bpm <= 0) {
+			this.silenceMusicVoices(t);
+			this.nextMusicBeat = -1;
+			return;
+		}
+
+		softGainRamp(this.padGain.gain, mix.bed * 0.42, t, 0.14);
+		this.padFilter?.frequency.setTargetAtTime(
+			420 + mix.intensity * 900 + mix.air * 500,
+			t,
+			0.12,
+		);
+		softGainRamp(this.bass.gain.gain, mix.bass * 0.7, t, 0.1);
+		this.bass.filter.frequency.setTargetAtTime(
+			140 + mix.drive * 220 + mix.intensity * 180,
 			t,
 			0.1,
 		);
-		softGainRamp(this.musicTension.gain.gain, mix.tension * 0.65, t, 0.08);
-		this.musicTension.osc.frequency.setTargetAtTime(
-			196 + mix.tension * 110,
+		softGainRamp(this.pulse.gain.gain, mix.drive * 0.08, t, 0.12);
+		this.pulse.filter.frequency.setTargetAtTime(380 + mix.drive * 700, t, 0.1);
+		softGainRamp(this.lead.gain.gain, mix.lead * 0.28, t, 0.1);
+		this.lead.filter.frequency.setTargetAtTime(
+			900 + mix.lead * 1400 + mix.air * 600,
 			t,
 			0.1,
 		);
-		softGainRamp(this.musicAir.gain.gain, mix.air * 0.5, t, 0.1);
-		if (mix.hit > 0.05 && t - this.lastMusicHit > 0.18) {
+		softGainRamp(this.tension.gain.gain, mix.tension * 0.38, t, 0.08);
+		this.tension.osc.frequency.setTargetAtTime(
+			MUSIC_ROOT * 2 * (1 + mix.tension * 0.08),
+			t,
+			0.08,
+		);
+		this.tension.filter.frequency.setTargetAtTime(
+			500 + mix.tension * 1600,
+			t,
+			0.08,
+		);
+		softGainRamp(this.air.gain.gain, mix.air * 0.4, t, 0.12);
+		this.air.filter.frequency.setTargetAtTime(1200 + mix.air * 1800, t, 0.12);
+		softGainRamp(
+			this.hat.gain.gain,
+			mix.drive * 0.04 + mix.intensity * 0.03,
+			t,
+			0.1,
+		);
+
+		if (mix.hit > 0.05 && t - this.lastMusicHit > 0.16) {
 			this.lastMusicHit = t;
 			const g = this.musicHit.gain;
 			g.setValueAtTime(Math.max(0.0001, g.value), t);
-			g.setTargetAtTime(mix.hit * 0.55, t, 0.02);
-			g.setTargetAtTime(0.0001, t + 0.08, 0.12);
+			g.setTargetAtTime(mix.hit * 0.7, t, 0.015);
+			g.setTargetAtTime(0.0001, t + 0.06, 0.1);
+			this.musicKick?.frequency.setValueAtTime(90 + mix.hit * 40, t);
+			this.musicKick?.frequency.setTargetAtTime(42, t + 0.02, 0.05);
+		}
+
+		this.advanceMusicClock(mix, t);
+	}
+
+	private advanceMusicClock(mix: MusicMix, t: number) {
+		if (!this.bass || !this.pulse || !this.lead || !this.hat) return;
+		const beatSec = 60 / Math.max(60, mix.bpm);
+		if (this.nextMusicBeat < 0 || this.nextMusicBeat < t - 0.25)
+			this.nextMusicBeat = t + 0.02;
+		let guard = 0;
+		while (this.nextMusicBeat <= t + 0.08 && guard++ < 8) {
+			const when = Math.max(t, this.nextMusicBeat);
+			const step = this.musicBeat;
+			const downbeat = step % 4 === 0;
+			const eighth = step % 2 === 0;
+			const tense = mix.tension > 0.45;
+
+			this.bass.osc.frequency.setTargetAtTime(bassNoteHz(step), when, 0.01);
+			this.lead.osc.frequency.setTargetAtTime(
+				leadNoteHz(step, tense),
+				when,
+				0.012,
+			);
+
+			const pulsePeak = mix.drive * (downbeat ? 0.55 : 0.28);
+			const pg = this.pulse.gain.gain;
+			pg.setValueAtTime(Math.max(0.0001, pg.value), when);
+			pg.setTargetAtTime(pulsePeak, when, 0.012);
+			pg.setTargetAtTime(mix.drive * 0.06, when + beatSec * 0.22, 0.05);
+
+			if (mix.bass > 0.2 && downbeat) {
+				const bg = this.bass.gain.gain;
+				bg.setValueAtTime(Math.max(0.0001, bg.value), when);
+				bg.setTargetAtTime(mix.bass * 0.95, when, 0.01);
+				bg.setTargetAtTime(mix.bass * 0.55, when + beatSec * 0.35, 0.06);
+			}
+
+			if (mix.lead > 0.15 && (eighth || tense)) {
+				const lg = this.lead.gain.gain;
+				lg.setValueAtTime(Math.max(0.0001, lg.value), when);
+				lg.setTargetAtTime(mix.lead * 0.48, when, 0.01);
+				lg.setTargetAtTime(mix.lead * 0.16, when + beatSec * 0.28, 0.05);
+			}
+
+			if (mix.drive > 0.25 && !downbeat) {
+				const hg = this.hat.gain.gain;
+				const hatPeak = (0.08 + mix.intensity * 0.14) * mix.drive;
+				hg.setValueAtTime(Math.max(0.0001, hg.value), when);
+				hg.setTargetAtTime(hatPeak, when, 0.005);
+				hg.setTargetAtTime(mix.drive * 0.03, when + 0.04, 0.03);
+				this.hat.filter.frequency.setTargetAtTime(
+					4200 + mix.intensity * 2800,
+					when,
+					0.02,
+				);
+			}
+
+			this.musicBeat = step + 1;
+			this.nextMusicBeat += beatSec;
+		}
+	}
+
+	private silenceMusicVoices(t: number) {
+		const nodes = [
+			this.padGain,
+			this.bass?.gain,
+			this.pulse?.gain,
+			this.lead?.gain,
+			this.tension?.gain,
+			this.air?.gain,
+			this.hat?.gain,
+			this.musicHit,
+		];
+		for (const node of nodes) {
+			if (!node) continue;
+			softGainRamp(node.gain, 0, t, 0.08);
 		}
 	}
 
@@ -436,18 +568,9 @@ export class AudioBus {
 		const ctx = this.ctx;
 		if (!ctx) return;
 		const t = ctx.currentTime;
-		const nodes = [
-			this.musicBed?.gain,
-			this.musicDrive?.gain,
-			this.musicTension?.gain,
-			this.musicAir?.gain,
-			this.musicHit,
-			this.musicBus,
-		];
-		for (const node of nodes) {
-			if (!node) continue;
-			softGainRamp(node.gain, 0, t, 0.08);
-		}
+		this.silenceMusicVoices(t);
+		if (this.musicBus) softGainRamp(this.musicBus.gain, 0, t, 0.08);
+		this.nextMusicBeat = -1;
 	}
 
 	private ensure(): AudioContext | null {
@@ -532,34 +655,84 @@ export class AudioBus {
 		this.slosh = this.loop(ctx, sfxBus, "lowpass", 160, 0.5);
 		this.wind = this.loop(ctx, sfxBus, "bandpass", 1100, 0.35);
 
-		this.musicBed = this.musicLayer(ctx, musicBus, "sine", 82.41, 0.4);
-		this.musicDrive = this.musicLayer(
+		const padFilter = ctx.createBiquadFilter();
+		padFilter.type = "lowpass";
+		padFilter.frequency.value = 520;
+		padFilter.Q.value = 0.5;
+		const padGain = ctx.createGain();
+		padGain.gain.value = 0;
+		padFilter.connect(padGain);
+		padGain.connect(musicBus);
+		this.padFilter = padFilter;
+		this.padGain = padGain;
+		this.osc(ctx, "sine", MUSIC_ROOT, padFilter);
+		this.osc(ctx, "sine", MUSIC_ROOT * (3 / 2) * 0.997, padFilter);
+		this.osc(ctx, "triangle", MUSIC_ROOT * 2 * 1.003, padFilter);
+
+		this.bass = this.scoreVoice(
+			ctx,
+			musicBus,
+			"sawtooth",
+			MUSIC_ROOT,
+			"lowpass",
+			180,
+			0.9,
+		);
+		this.pulse = this.scoreVoice(
 			ctx,
 			musicBus,
 			"triangle",
-			164.81,
-			0.8,
+			MUSIC_ROOT * 2,
 			"lowpass",
-			420,
+			640,
+			0.7,
 		);
-		this.musicTension = this.musicLayer(ctx, musicBus, "sawtooth", 196, 0.35);
-		this.musicAir = this.musicLayer(ctx, musicBus, "triangle", 329.63, 0.5);
+		this.lead = this.scoreVoice(
+			ctx,
+			musicBus,
+			"square",
+			MUSIC_ROOT * 4,
+			"bandpass",
+			1200,
+			1.1,
+		);
+		this.tension = this.scoreVoice(
+			ctx,
+			musicBus,
+			"sawtooth",
+			MUSIC_ROOT * 2.05,
+			"bandpass",
+			700,
+			1.4,
+		);
+		this.air = this.scoreVoice(
+			ctx,
+			musicBus,
+			"triangle",
+			MUSIC_ROOT * 4 * (3 / 2),
+			"highpass",
+			900,
+			0.6,
+		);
+		this.hat = this.loop(ctx, musicBus, "highpass", 5000, 0.7);
 		const hit = ctx.createGain();
 		hit.gain.value = 0;
 		hit.connect(musicBus);
 		this.musicHit = hit;
-		this.osc(ctx, "sine", 55, hit);
+		this.musicKick = this.osc(ctx, "sine", 70, hit);
+		this.musicBeat = 0;
+		this.nextMusicBeat = -1;
 	}
 
-	private musicLayer(
+	private scoreVoice(
 		ctx: AudioContext,
 		dest: AudioNode,
 		type: OscillatorType,
 		freq: number,
+		filterType: BiquadFilterType,
+		filterFreq: number,
 		q: number,
-		filterType: BiquadFilterType = "lowpass",
-		filterFreq = 900,
-	): MusicLayer {
+	): ScoreVoice {
 		const gain = ctx.createGain();
 		gain.gain.value = 0;
 		gain.connect(dest);

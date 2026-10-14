@@ -188,23 +188,31 @@ describe("AudioBus", () => {
 		expect(param.targets).toEqual([0]);
 	});
 
-	it("keeps music layers looping while the mix changes", () => {
+	it("keeps music voices looping while the groove advances", () => {
 		const bus = new AudioBus();
 		bus.unlock();
 		const armed = starts;
 		bus.musicTick({
 			bed: 0.6,
 			drive: 0.4,
+			bass: 0.5,
+			lead: 0.4,
 			tension: 0.2,
 			air: 0,
 			hit: 0,
+			intensity: 0.3,
+			bpm: 100,
 		});
 		bus.musicTick({
 			bed: 0.7,
 			drive: 0.8,
+			bass: 0.8,
+			lead: 0.7,
 			tension: 0.9,
 			air: 0.5,
 			hit: 0.6,
+			intensity: 0.8,
+			bpm: 128,
 		});
 		expect(starts).toBe(armed);
 	});
@@ -217,9 +225,13 @@ describe("AudioBus", () => {
 		bus.musicTick({
 			bed: 1,
 			drive: 1,
+			bass: 1,
+			lead: 1,
 			tension: 1,
 			air: 1,
 			hit: 1,
+			intensity: 1,
+			bpm: 120,
 		});
 		expect(starts).toBe(armed);
 	});
