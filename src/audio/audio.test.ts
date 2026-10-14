@@ -177,6 +177,7 @@ describe("AudioBus", () => {
 
 	it("ramps mute without a cancel-and-snap spike", () => {
 		expect(softMuteTarget(false, 1)).toBe(0);
+		expect(softMuteTarget(false, 1, true)).toBeCloseTo(0.8, 6);
 		expect(masterGainFor(1)).toBeCloseTo(0.8, 6);
 		expect(masterGainFor(0)).toBe(0);
 		const param = new FakeParam();
@@ -185,5 +186,41 @@ describe("AudioBus", () => {
 		expect(param.cancels).toBe(0);
 		expect(param.snaps).toEqual([]);
 		expect(param.targets).toEqual([0]);
+	});
+
+	it("keeps music layers looping while the mix changes", () => {
+		const bus = new AudioBus();
+		bus.unlock();
+		const armed = starts;
+		bus.musicTick({
+			bed: 0.6,
+			drive: 0.4,
+			tension: 0.2,
+			air: 0,
+			hit: 0,
+		});
+		bus.musicTick({
+			bed: 0.7,
+			drive: 0.8,
+			tension: 0.9,
+			air: 0.5,
+			hit: 0.6,
+		});
+		expect(starts).toBe(armed);
+	});
+
+	it("silences music when the music toggle is off", () => {
+		const bus = new AudioBus();
+		bus.music = false;
+		bus.unlock();
+		const armed = starts;
+		bus.musicTick({
+			bed: 1,
+			drive: 1,
+			tension: 1,
+			air: 1,
+			hit: 1,
+		});
+		expect(starts).toBe(armed);
 	});
 });

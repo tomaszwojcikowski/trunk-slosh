@@ -1,6 +1,7 @@
 import { AudioBus, rollGainFor } from "../audio/AudioBus";
 import { airborneMix } from "../audio/airborneMix";
 import { lipAccentGain, sloshCutoffFor } from "../audio/cargoVoice";
+import { musicMixFor } from "../audio/dynamicMusic";
 import { Input } from "../input/Input";
 import type { Vec2 } from "../math/vec2";
 import { FluidLayer } from "../physics/FluidLayer";
@@ -364,6 +365,7 @@ export class Game {
 	private applySettingsToRuntime() {
 		this.inkEnabled = this.settings.ink;
 		this.audio.enabled = this.settings.sfx;
+		this.audio.music = this.settings.music;
 		this.audio.volume = this.settings.masterVolume;
 		this.input.keyboardRampMul = this.settings.keyboardRamp;
 		this.input.touchSensitivityMul = this.settings.touchSensitivity;
@@ -424,6 +426,7 @@ export class Game {
 	private bindSettings(root: HTMLElement) {
 		const ink = root.querySelector<HTMLInputElement>("#set-ink")!;
 		const sfx = root.querySelector<HTMLInputElement>("#set-sfx")!;
+		const music = root.querySelector<HTMLInputElement>("#set-music")!;
 		const volume = root.querySelector<HTMLInputElement>("#set-volume")!;
 		const motion = root.querySelector<HTMLInputElement>("#set-motion")!;
 		const punch = root.querySelector<HTMLInputElement>("#set-punch")!;
@@ -434,6 +437,7 @@ export class Game {
 		const sync = () => {
 			ink.checked = this.settings.ink;
 			sfx.checked = this.settings.sfx;
+			music.checked = this.settings.music;
 			volume.value = String(this.settings.masterVolume);
 			motion.checked = this.settings.reducedMotion;
 			punch.checked = this.settings.cameraPunch;
@@ -513,6 +517,7 @@ export class Game {
 		const save = () => {
 			this.settings.ink = ink.checked;
 			this.settings.sfx = sfx.checked;
+			this.settings.music = music.checked;
 			this.settings.masterVolume = Number(volume.value);
 			this.settings.reducedMotion = motion.checked;
 			this.settings.cameraPunch = punch.checked;
@@ -531,6 +536,7 @@ export class Game {
 		for (const el of [
 			ink,
 			sfx,
+			music,
 			volume,
 			motion,
 			punch,
@@ -1031,6 +1037,20 @@ export class Game {
 		this.audio.surfaceRoll(snap.airborne ? 0 : snap.speed, sandy);
 		this.audio.surfaceWind(snap.speed, snap.airborne);
 		this.audio.engineLoad(snap.speed, mix.throttle);
+		const threat = cargoThreatLevel(
+			this.fluid.remainingRatio(),
+			this.runConfig.mode,
+		);
+		this.audio.musicTick(
+			musicMixFor({
+				speed: snap.speed,
+				slosh: this.fluid.sloshSpeed(),
+				threat,
+				airborne: snap.airborne,
+				impact: snap.impact,
+				active: this.settings.music && this.phase === "driving" && !this.paused,
+			}),
+		);
 		this.pitchSettle = settlePitch(
 			this.pitchSettle.pitch,
 			this.pitchSettle.velocity,

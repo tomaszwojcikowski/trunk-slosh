@@ -65,6 +65,7 @@ app.innerHTML = `
         <h2 class="title small">Settings</h2>
         <label class="set-row"><input type="checkbox" id="set-ink" /> Ink shader</label>
         <label class="set-row"><input type="checkbox" id="set-sfx" /> Sound effects</label>
+        <label class="set-row"><input type="checkbox" id="set-music" /> Dynamic music</label>
         <label class="set-row">Master volume <input type="range" id="set-volume" min="0" max="1" step="0.05" /></label>
         <label class="set-row"><input type="checkbox" id="set-motion" /> Reduced motion</label>
         <label class="set-row"><input type="checkbox" id="set-punch" /> Spill camera punch</label>

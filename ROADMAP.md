@@ -227,13 +227,13 @@ This document defines **what is shipped today** and **sequenced next phases** fo
 
 ## Where the game is now
 
-Phases 0–30 are shipped on this line (v0.31.0). Vehicle integration moved to Rapier3D raycast suspension in v0.32.0.
+Phases 0–31 are shipped on this line (v0.34.0). Vehicle integration moved to Rapier3D raycast suspension in v0.32.0.
 
 The main view is true isometric. The chase frame eases toward its lookahead and holds the truck in the lower half. The road is a height-following ribbon: flats stay level, canyon routes climb, boulder routes step, bends bank across the width, and a short ramp can leave the ground. A crease marks a boulder rise and the ramp crown. Contact shadows sit on the local ribbon. Easy hills are gentler; medium and hard stay on the current cap. The HUD names cargo, slosh, speed, G, grade, air, route, checkpoints, and time, plus a ghost split when a best is racing beside you. The slosh band uses hysteresis so calm/moving/lip do not chatter. Checkpoints pop. Contract and time-trial cargo bars warn before they fail. Pause opens a card. Spills and lip/danger edges announce to an aria-live region. A gamepad drives the same pedals as the keys. Wheels carry a mark that advances with distance, the cab spring-settles under braking, and a short truck draws the short axles. A hard hit plays an impact thud whose voice follows the prop kind when known.
 
 The pickup has round tires, a raised hood, bumper, grille, lamps, bed rails, and glass, all on `car.z`. The body, hood, and cab take the pitch lift. The tub opening stays on the bed. Rocks are two stages with a crack, cacti have spines, barrels have a lid, and tire stacks have a hub, each at the obstacle’s stored height. Droplets streak along their flight. Dust puffs have a second lobe and fade with life. Splats, skids, and spill popups soften before they leave. The ink pass is one fragment shader: Sobel, five cel bands, world-anchored hatch, a grain uniform that a review capture can freeze, and a vignette. The liquid keeps a lit band that survives cel shading.
 
-The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, desert wind, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Master volume lives in Settings; mute and pause duck continuous layers without zipper clicks. Rumble goes quiet in the air and the engine drops the throttle term; wind thins in the air. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
+The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust), road rumble, desert wind, a continuous slosh bed with a cargo cutoff, a lip accent, tire scrub updated every step, and the impact thud. Adaptive music adds bed, drive, tension, air, and hit layers driven by speed, slosh, cargo threat, airborne, and impacts (Settings → Dynamic music). Master volume lives in Settings; mute and pause duck continuous layers without zipper clicks. Rumble goes quiet in the air and the engine drops the throttle term; wind thins in the air. Grade and jump each have one tutorial hint. Results include airborne time. Easy and hard bests and ghosts use their own storage key. Medium still reads the original mode-and-seed key. Replay blobs stay version 2.
 
 ---
 
@@ -992,6 +992,36 @@ The mix is the layered engine (fundamental, detuned body, harmonic, sub, exhaust
 
 ---
 
+## Phase 31 — Dynamic music
+
+**Theme:** An adaptive score that reads the drive without drowning the SFX bus.
+
+**Goals**
+
+- Layered Web Audio music responds to speed, slosh, cargo threat, airtime, and impacts.
+- Music and SFX mute independently; master volume and pause duck still apply.
+
+**Deliverables**
+
+- [x] Pure `musicMixFor` drivers with unit tests for bed / drive / tension / air / hit.
+- [x] `AudioBus.musicTick` continuous layers under a music group gain.
+- [x] Settings → **Dynamic music** persisted with the other display settings.
+- [x] Game wires drivers every step while driving; idle / pause / finish silence or duck the score.
+
+**Acceptance criteria**
+
+- Parked active mix keeps a bed and zero drive; cruise opens drive; airborne lifts air and softens drive.
+- Danger cargo and hard impacts raise tension / hit above calm baselines.
+- Music off leaves SFX playing; SFX off leaves music playing; both off zeros the master.
+
+**Dependencies:** Phase 15/23 audio bus, Phase 27 cargo threat.
+
+**Risks**
+
+- Score fighting the engine for headroom — keep music group gain under ~0.22 of master.
+
+---
+
 ## Cross-cutting backlog (pull from any phase)
 
 Items that do not block a single phase but should be picked up when touching nearby code:
@@ -1015,7 +1045,7 @@ Items that do not block a single phase but should be picked up when touching nea
 
 ## How to use this roadmap
 
-1. **Pick the lowest phase with open checkboxes.** Phases 0–30 are done. New work starts after Phase 30.
+1. **Pick the lowest phase with open checkboxes.** Phases 0–31 are done. New work starts after Phase 31.
 2. **Open a GitHub issue** with label `phase-N` and copy the relevant deliverables into the description.
 3. **Define done** using that phase’s acceptance criteria plus existing tests (`npm test`).
 4. When a phase completes, tick boxes here in a dedicated PR and bump `package.json` minor version if user-facing.
@@ -1059,5 +1089,6 @@ Items that do not block a single phase but should be picked up when touching nea
 | **0.31.x** | Phase 30 |
 | **0.32.x** | Rapier3D raycast vehicle (post–Phase 30) |
 | **0.33.x** | Truck detail, dune/berm 3D, live barrel sync |
+| **0.34.x** | Dynamic adaptive music layers |
 
 Semantic versioning applies to **player-visible** changes; internal refactors can patch-bump within the active phase.
