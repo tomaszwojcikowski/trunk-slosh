@@ -1049,6 +1049,36 @@ export class Renderer {
 				ctx.lineTo(b.x, b.y);
 				ctx.stroke();
 			}
+			// Uphill / downhill chevrons on the centerline — unmistakable grade cue.
+			if (tint > 0.35 && i % 3 === 0) {
+				const p = track.pointAt(samples[i].along);
+				const t = { x: Math.cos(p.angle), y: Math.sin(p.angle) };
+				const n = p.n;
+				// grade > 0 is downhill along +tangent — tip points uphill.
+				const dir = grades[i] >= 0 ? -1 : 1;
+				const tip = {
+					x: p.p.x + t.x * 1.1 * dir,
+					y: p.p.y + t.y * 1.1 * dir,
+				};
+				const left = {
+					x: p.p.x - t.x * 0.35 * dir + n.x * 0.55,
+					y: p.p.y - t.y * 0.35 * dir + n.y * 0.55,
+				};
+				const right = {
+					x: p.p.x - t.x * 0.35 * dir - n.x * 0.55,
+					y: p.p.y - t.y * 0.35 * dir - n.y * 0.55,
+				};
+				const zz = samples[i].z + 0.06;
+				this.fillScreenPoly(
+					[
+						this.P(tip.x, tip.y, zz),
+						this.P(left.x, left.y, zz),
+						this.P(right.x, right.y, zz),
+					],
+					`rgba(255, 198, 58, ${0.4 + tint * 0.45})`,
+					Math.max(0.8, 0.06 * this.s),
+				);
+			}
 		}
 
 		// High-edge highlight on banked bends (inside of the turn sits higher).
