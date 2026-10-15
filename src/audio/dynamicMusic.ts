@@ -88,11 +88,14 @@ export function nearMissFor(clearance: number, horizon = 4.5): number {
 	return clamp01(1 - clearance / horizon);
 }
 
-/** Chase tempo: a living pulse even when parked, climbs with speed. */
+/**
+ * Chase tempo around the Colorosse Arcade stem rate (152 BPM).
+ * Parked stays musical; speed opens the groove without pitching stems into chipmunks.
+ */
 export function musicBpmFor(speed: number, active: boolean): number {
 	if (!active) return 0;
 	const s = Math.max(0, speed);
-	return 88 + Math.min(52, s * 1.65);
+	return 128 + Math.min(40, s * 1.2);
 }
 
 /** MIDI-style degree → Hz from MUSIC_ROOT. */
