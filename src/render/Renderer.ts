@@ -12,7 +12,7 @@ import {
 import { TRUNK_LIP_HEIGHT } from "../physics/trunkConstants";
 import type { VehicleSnapshot } from "../physics/VehicleSimulation";
 import { CAR_SPEC } from "../physics/VehicleSimulation";
-import { bankedHeight, cosineBump, RAMP_HALF } from "../world/grade";
+import { bankedHeight, cosineBump, RAMP_HALF, WASH_HALF } from "../world/grade";
 import {
 	type Decor,
 	mulberry32,
@@ -35,6 +35,18 @@ import {
 	obstacleDrawHeight,
 	rockDrawHeight,
 } from "./propHeight";
+import {
+	asphaltForLit,
+	bankHighlight,
+	embankDepth,
+	faceLit,
+	gradeTint,
+	needsGradeCrease,
+	ROAD_CURB,
+	roadShadeScore,
+	roadSurfaceNormal,
+	shoulderForLit,
+} from "./roadSlope";
 import { SUN, SUN_2D, shadowOffset } from "./sun";
 import { drawTubMesh } from "./trunkMeshDraw";
 
@@ -737,8 +749,14 @@ export class Renderer {
 		const z = samples.map((s) => s.z);
 		const n = track.centerline.length;
 		const W = track.roadWidth;
-		const normals = samples.map((s) => track.pointAt(s.along).n);
+		const points = samples.map((s) => track.pointAt(s.along));
+		const normals = points.map((p) => p.n);
+		const tangents = points.map((p) => ({
+			x: Math.cos(p.angle),
+			y: Math.sin(p.angle),
+		}));
 		const banks = samples.map((s) => track.bankAt(s.along));
+		const grades = samples.map((s) => track.gradeAt(s.along));
 		const lateral = (i: number, edge: Vec2) => {
 			const c = track.centerline[i];
 			const normal = normals[i];
@@ -748,12 +766,16 @@ export class Renderer {
 			bankedHeight(z[i], banks[i], lateral(i, edge));
 		const visible = (i: number) => {
 			const c = track.centerline[i];
-			return inView(c.x, c.y, W, 3);
+			return inView(c.x, c.y, W, 4);
 		};
 		this.screenSpace();
+
+		// Embankment + curb sidewalls first so the ribbon top paints over them.
+		this.drawRoadSidewalls(track, zAt, visible, grades, normals);
+
 		const band = (
 			extra: number,
-			color: string,
+			colorFor: (i: number) => string,
 			when?: (i: number) => boolean,
 		) => {
 			for (let i = 0; i < n - 1; i++) {
@@ -772,74 +794,73 @@ export class Renderer {
 						this.P(r1.x, r1.y, zAt(i + 1, r1)),
 						this.P(l1.x, l1.y, zAt(i + 1, l1)),
 					],
-					color,
+					colorFor(i),
 					0,
 				);
 			}
 		};
-		band(0.7, INK);
-		band(0.35, C.shoulder);
-		band(0, C.asphalt);
-		// Raised berms / cut banks so canyon and boulder routes read as 3D corridors.
+		band(0.7, () => INK);
+		band(0.35, (i) => {
+			const nrm = roadSurfaceNormal(
+				grades[i],
+				banks[i],
+				tangents[i],
+				normals[i],
+			);
+			return shoulderForLit(roadShadeScore(faceLit(nrm), grades[i], banks[i]));
+		});
+		band(0, (i) => {
+			const nrm = roadSurfaceNormal(
+				grades[i],
+				banks[i],
+				tangents[i],
+				normals[i],
+			);
+			return asphaltForLit(roadShadeScore(faceLit(nrm), grades[i], banks[i]));
+		});
+
+		// Raised berms / cut banks that follow the ribbon height at each corner.
 		for (let i = 0; i < n - 1; i += 2) {
 			if (!visible(i) && !visible(i + 1)) continue;
-			const grade = Math.abs(track.gradeAt(samples[i].along));
+			const absG = Math.abs(grades[i]);
 			const bermH =
 				track.archetype === "canyon"
-					? 0.55 + grade * 4
+					? 0.7 + absG * 5
 					: track.archetype === "boulder"
-						? 0.4 + grade * 2.5
-						: 0.18;
-			if (bermH < 0.2) continue;
+						? 0.55 + absG * 3.2
+						: absG > 0.025
+							? 0.35 + absG * 2
+							: 0;
+			if (bermH < 0.25) continue;
+			const i1 = Math.min(n - 1, i + 1);
 			for (const edge of [track.leftEdge, track.rightEdge] as const) {
 				const e0 = edge[i];
-				const e1 = edge[Math.min(n - 1, i + 1)];
+				const e1 = edge[i1];
 				const c0 = track.centerline[i];
-				const c1 = track.centerline[Math.min(n - 1, i + 1)];
-				const out0 = this.widen(c0, e0, 1.1);
-				const out1 = this.widen(c1, e1, 1.1);
+				const c1 = track.centerline[i1];
+				const out0 = this.widen(c0, e0, 1.25);
+				const out1 = this.widen(c1, e1, 1.25);
 				const z0 = zAt(i, e0);
-				const z1 = zAt(Math.min(n - 1, i + 1), e1);
+				const z1 = zAt(i1, e1);
+				const base = Math.min(z0, z1) - ROAD_CURB * 0.35;
 				this.prism(
 					[e0, e1, out1, out0],
-					Math.min(z0, z1),
-					Math.min(z0, z1) + bermH,
+					base,
+					base + bermH,
 					{ top: "#c99458", lit: "#b07a42", shade: "#7a5230" },
 					0.035,
-					0.92,
+					0.9,
+					undefined,
+					(idx) => {
+						const edgeZ = idx < 2 ? (idx === 0 ? z0 : z1) : idx === 2 ? z1 : z0;
+						return Math.max(0, edgeZ - base - bermH * 0.15);
+					},
 				);
 			}
 		}
-		const crease = (i: number) => {
-			const s = samples[i].along;
-			if (Math.abs(track.gradeAt(s)) > 0.045) return true;
-			const furniture = track.furniture;
-			return !!furniture && cosineBump(s, furniture.rampS, RAMP_HALF) > 0.55;
-		};
-		const inset = (center: Vec2, edge: Vec2) => ({
-			x: center.x + (edge.x - center.x) * 0.28,
-			y: center.y + (edge.y - center.y) * 0.28,
-		});
-		for (let i = 0; i < n - 1; i++) {
-			if (!crease(i) && !crease(i + 1)) continue;
-			if (!visible(i) && !visible(i + 1)) continue;
-			const c0 = track.centerline[i];
-			const c1 = track.centerline[i + 1];
-			const l0 = inset(c0, track.leftEdge[i]);
-			const r0 = inset(c0, track.rightEdge[i]);
-			const l1 = inset(c1, track.leftEdge[i + 1]);
-			const r1 = inset(c1, track.rightEdge[i + 1]);
-			this.fillScreenPoly(
-				[
-					this.P(l0.x, l0.y, zAt(i, l0)),
-					this.P(r0.x, r0.y, zAt(i, r0)),
-					this.P(r1.x, r1.y, zAt(i + 1, r1)),
-					this.P(l1.x, l1.y, zAt(i + 1, l1)),
-				],
-				"#4e4338",
-				0,
-			);
-		}
+
+		this.drawRoadGradeMarks(track, samples, zAt, visible, grades, banks);
+		this.drawRampAndWash(track, samples, zAt, visible);
 
 		const ctx = this.ctx;
 		const chain = (
@@ -880,6 +901,306 @@ export class Renderer {
 		this.drawChecker(track.start, track.startAngle, W, 1);
 		this.planeAt(track.heightAt(track.finishS));
 		this.drawChecker(track.finish, track.finishAngle, W, 3);
+	}
+
+	/** Vertical curb / embankment faces so a grade reads as a tilting silhouette. */
+	private drawRoadSidewalls(
+		track: Track,
+		zAt: (i: number, edge: Vec2) => number,
+		visible: (i: number) => boolean,
+		grades: number[],
+		normals: Vec2[],
+	) {
+		const n = track.centerline.length;
+		const wallColors = {
+			lit: "#8a5a30",
+			shade: "#5a381c",
+			deep: "#2e1c10",
+			lip: "#d2b48c",
+		};
+		for (let i = 0; i < n - 1; i++) {
+			if (!visible(i) && !visible(i + 1)) continue;
+			const absG = Math.abs(grades[i]);
+			const centerZ = Math.abs(zAt(i, track.centerline[i]));
+			const embank = embankDepth(track.archetype, absG, centerZ);
+			const sides: { edge: Vec2[]; sign: number }[] = [
+				{ edge: track.leftEdge, sign: -1 },
+				{ edge: track.rightEdge, sign: 1 },
+			];
+			for (const side of sides) {
+				const e0 = side.edge[i];
+				const e1 = side.edge[i + 1];
+				const top0 = zAt(i, e0);
+				const top1 = zAt(i + 1, e1);
+				const bot0 = top0 - embank;
+				const bot1 = top1 - embank;
+				const outward = {
+					x: normals[i].x * side.sign,
+					y: normals[i].y * side.sign,
+				};
+				const sunLit = outward.x * SUN_2D.x + outward.y * SUN_2D.y > 0.05;
+				const base = sunLit ? wallColors.lit : wallColors.shade;
+				const dz = Math.abs(top0 - top1);
+				const fill = dz > 0.25 || absG > 0.03 ? wallColors.deep : base;
+				// Ground contact shadow under the embankment.
+				this.fillScreenPoly(
+					[
+						this.P(e0.x, e0.y, bot0 - 0.02),
+						this.P(e1.x, e1.y, bot1 - 0.02),
+						this.P(
+							e1.x + outward.x * 0.55,
+							e1.y + outward.y * 0.55,
+							bot1 - 0.02,
+						),
+						this.P(
+							e0.x + outward.x * 0.55,
+							e0.y + outward.y * 0.55,
+							bot0 - 0.02,
+						),
+					],
+					"rgba(55, 22, 0, 0.35)",
+					0,
+				);
+				this.fillScreenPoly(
+					[
+						this.P(e0.x, e0.y, bot0),
+						this.P(e1.x, e1.y, bot1),
+						this.P(e1.x, e1.y, top1),
+						this.P(e0.x, e0.y, top0),
+					],
+					fill,
+					Math.max(1, 0.07 * this.s),
+				);
+				// Light lip along the top edge so the tilt of the curb reads.
+				const ctx = this.ctx;
+				ctx.strokeStyle = wallColors.lip;
+				ctx.lineWidth = Math.max(1.4, 0.11 * this.s);
+				ctx.beginPath();
+				const a = this.P(e0.x, e0.y, top0 + 0.02);
+				const b = this.P(e1.x, e1.y, top1 + 0.02);
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+				ctx.stroke();
+			}
+		}
+	}
+
+	/** Creases, contour stripes, and bank edge highlights on sloping ribbon. */
+	private drawRoadGradeMarks(
+		track: Track,
+		samples: { z: number; along: number }[],
+		zAt: (i: number, edge: Vec2) => number,
+		visible: (i: number) => boolean,
+		grades: number[],
+		banks: number[],
+	) {
+		const n = track.centerline.length;
+		const furniture = track.furniture;
+		const crease = (i: number) => {
+			const s = samples[i].along;
+			const bump = furniture ? cosineBump(s, furniture.rampS, RAMP_HALF) : 0;
+			return needsGradeCrease(Math.abs(grades[i]), bump);
+		};
+		const inset = (center: Vec2, edge: Vec2, t: number) => ({
+			x: center.x + (edge.x - center.x) * t,
+			y: center.y + (edge.y - center.y) * t,
+		});
+		for (let i = 0; i < n - 1; i++) {
+			if (!crease(i) && !crease(i + 1)) continue;
+			if (!visible(i) && !visible(i + 1)) continue;
+			const c0 = track.centerline[i];
+			const c1 = track.centerline[i + 1];
+			const tint = gradeTint(Math.abs(grades[i]));
+			const l0 = inset(c0, track.leftEdge[i], 0.22);
+			const r0 = inset(c0, track.rightEdge[i], 0.22);
+			const l1 = inset(c1, track.leftEdge[i + 1], 0.22);
+			const r1 = inset(c1, track.rightEdge[i + 1], 0.22);
+			this.fillScreenPoly(
+				[
+					this.P(l0.x, l0.y, zAt(i, l0) + 0.02),
+					this.P(r0.x, r0.y, zAt(i, r0) + 0.02),
+					this.P(r1.x, r1.y, zAt(i + 1, r1) + 0.02),
+					this.P(l1.x, l1.y, zAt(i + 1, l1) + 0.02),
+				],
+				tint > 0.55 ? "#3f342c" : "#4e4338",
+				0,
+			);
+			// Contour stripe across the ribbon so the climb/descent angle is readable.
+			if (tint > 0.15) {
+				const midL = {
+					x: (l0.x + l1.x) * 0.5,
+					y: (l0.y + l1.y) * 0.5,
+				};
+				const midR = {
+					x: (r0.x + r1.x) * 0.5,
+					y: (r0.y + r1.y) * 0.5,
+				};
+				const zm = (zAt(i, l0) + zAt(i + 1, l1)) * 0.5 + 0.04;
+				const ctx = this.ctx;
+				ctx.strokeStyle =
+					grades[i] > 0
+						? `rgba(210, 180, 130, ${0.35 + tint * 0.55})`
+						: `rgba(40, 28, 18, ${0.4 + tint * 0.5})`;
+				ctx.lineWidth = Math.max(1.6, 0.16 * this.s * (0.7 + tint));
+				ctx.beginPath();
+				const a = this.P(midL.x, midL.y, zm);
+				const b = this.P(midR.x, midR.y, zm);
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+				ctx.stroke();
+			}
+			// Uphill / downhill chevrons on the centerline — unmistakable grade cue.
+			if (tint > 0.35 && i % 3 === 0) {
+				const p = track.pointAt(samples[i].along);
+				const t = { x: Math.cos(p.angle), y: Math.sin(p.angle) };
+				const n = p.n;
+				// grade > 0 is downhill along +tangent — tip points uphill.
+				const dir = grades[i] >= 0 ? -1 : 1;
+				const tip = {
+					x: p.p.x + t.x * 1.1 * dir,
+					y: p.p.y + t.y * 1.1 * dir,
+				};
+				const left = {
+					x: p.p.x - t.x * 0.35 * dir + n.x * 0.55,
+					y: p.p.y - t.y * 0.35 * dir + n.y * 0.55,
+				};
+				const right = {
+					x: p.p.x - t.x * 0.35 * dir - n.x * 0.55,
+					y: p.p.y - t.y * 0.35 * dir - n.y * 0.55,
+				};
+				const zz = samples[i].z + 0.06;
+				this.fillScreenPoly(
+					[
+						this.P(tip.x, tip.y, zz),
+						this.P(left.x, left.y, zz),
+						this.P(right.x, right.y, zz),
+					],
+					`rgba(255, 198, 58, ${0.4 + tint * 0.45})`,
+					Math.max(0.8, 0.06 * this.s),
+				);
+			}
+		}
+
+		// High-edge highlight on banked bends (inside of the turn sits higher).
+		for (let i = 0; i < n - 1; i++) {
+			const bh = bankHighlight(Math.abs(banks[i]));
+			if (bh < 0.2) continue;
+			if (!visible(i) && !visible(i + 1)) continue;
+			const highEdge = banks[i] >= 0 ? track.leftEdge : track.rightEdge;
+			const lowEdge = banks[i] >= 0 ? track.rightEdge : track.leftEdge;
+			const c0 = track.centerline[i];
+			const c1 = track.centerline[i + 1];
+			const hi0 = inset(c0, highEdge[i], 0.92);
+			const hi1 = inset(c1, highEdge[i + 1], 0.92);
+			const lo0 = inset(c0, highEdge[i], 0.72);
+			const lo1 = inset(c1, highEdge[i + 1], 0.72);
+			this.fillScreenPoly(
+				[
+					this.P(hi0.x, hi0.y, zAt(i, hi0) + 0.04),
+					this.P(hi1.x, hi1.y, zAt(i + 1, hi1) + 0.04),
+					this.P(lo1.x, lo1.y, zAt(i + 1, lo1) + 0.03),
+					this.P(lo0.x, lo0.y, zAt(i, lo0) + 0.03),
+				],
+				`rgba(241, 228, 194, ${0.25 + bh * 0.35})`,
+				0,
+			);
+			const d0 = inset(c0, lowEdge[i], 0.88);
+			const d1 = inset(c1, lowEdge[i + 1], 0.88);
+			const e0 = inset(c0, lowEdge[i], 0.68);
+			const e1 = inset(c1, lowEdge[i + 1], 0.68);
+			this.fillScreenPoly(
+				[
+					this.P(d0.x, d0.y, zAt(i, d0) + 0.02),
+					this.P(d1.x, d1.y, zAt(i + 1, d1) + 0.02),
+					this.P(e1.x, e1.y, zAt(i + 1, e1) + 0.02),
+					this.P(e0.x, e0.y, zAt(i, e0) + 0.02),
+				],
+				`rgba(40, 28, 18, ${0.12 + bh * 0.28})`,
+				0,
+			);
+		}
+	}
+
+	/** Explicit ramp wedge and wash bowl so furniture is not just a flat crease. */
+	private drawRampAndWash(
+		track: Track,
+		samples: { z: number; along: number }[],
+		zAt: (i: number, edge: Vec2) => number,
+		visible: (i: number) => boolean,
+	) {
+		const furniture = track.furniture;
+		if (!furniture) return;
+		const n = track.centerline.length;
+		for (let i = 0; i < n - 1; i++) {
+			if (!visible(i) && !visible(i + 1)) continue;
+			const s0 = samples[i].along;
+			const s1 = samples[i + 1].along;
+			const ramp0 = cosineBump(s0, furniture.rampS, RAMP_HALF);
+			const ramp1 = cosineBump(s1, furniture.rampS, RAMP_HALF);
+			const wash0 = cosineBump(s0, furniture.washS, WASH_HALF);
+			const wash1 = cosineBump(s1, furniture.washS, WASH_HALF);
+			const c0 = track.centerline[i];
+			const l0 = track.leftEdge[i];
+			const r0 = track.rightEdge[i];
+			const l1 = track.leftEdge[i + 1];
+			const r1 = track.rightEdge[i + 1];
+
+			if (ramp0 > 0.08 || ramp1 > 0.08) {
+				const lift = Math.max(ramp0, ramp1) * 0.35;
+				this.fillScreenPoly(
+					[
+						this.P(l0.x, l0.y, zAt(i, l0) + lift * 0.15),
+						this.P(r0.x, r0.y, zAt(i, r0) + lift * 0.15),
+						this.P(r1.x, r1.y, zAt(i + 1, r1) + lift * 0.15),
+						this.P(l1.x, l1.y, zAt(i + 1, l1) + lift * 0.15),
+					],
+					ramp0 > 0.7 || ramp1 > 0.7 ? "#6a5a48" : "#746454",
+					0,
+				);
+				// Leading lip of the ramp — a thin raised bar across the ribbon.
+				if (ramp0 > 0.55 && ramp0 >= ramp1) {
+					const a = this.P(l0.x, l0.y, zAt(i, l0) + 0.12);
+					const b = this.P(r0.x, r0.y, zAt(i, r0) + 0.12);
+					const ctx = this.ctx;
+					ctx.strokeStyle = "#d8c4a0";
+					ctx.lineWidth = Math.max(2, 0.2 * this.s);
+					ctx.beginPath();
+					ctx.moveTo(a.x, a.y);
+					ctx.lineTo(b.x, b.y);
+					ctx.stroke();
+				}
+			}
+
+			if (wash0 > 0.08 || wash1 > 0.08) {
+				const sink = Math.max(wash0, wash1) * 0.2;
+				this.fillScreenPoly(
+					[
+						this.P(l0.x, l0.y, zAt(i, l0) - sink),
+						this.P(r0.x, r0.y, zAt(i, r0) - sink),
+						this.P(r1.x, r1.y, zAt(i + 1, r1) - sink),
+						this.P(l1.x, l1.y, zAt(i + 1, l1) - sink),
+					],
+					wash0 > 0.55 || wash1 > 0.55 ? "#5c4a38" : "#6a5644",
+					0,
+				);
+				// Soft sand lips on the wash walls.
+				if (wash0 > 0.35) {
+					for (const edge of [l0, r0] as const) {
+						const out = this.widen(c0, edge, 0.55);
+						this.fillScreenPoly(
+							[
+								this.P(edge.x, edge.y, zAt(i, edge)),
+								this.P(out.x, out.y, zAt(i, edge) - 0.15),
+								this.P(out.x, out.y, zAt(i, edge) + 0.2),
+								this.P(edge.x, edge.y, zAt(i, edge) + 0.08),
+							],
+							"#b88850",
+							0,
+						);
+					}
+				}
+			}
+		}
 	}
 
 	private drawChevron(track: Track, target: Vec2) {
