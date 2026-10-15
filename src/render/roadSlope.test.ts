@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	asphaltForLit,
 	bankHighlight,
+	embankDepth,
 	faceLit,
 	gradeTint,
 	needsGradeCrease,
+	roadShadeScore,
 	roadSurfaceNormal,
 } from "./roadSlope";
 
@@ -24,17 +26,20 @@ describe("road slope visuals", () => {
 		expect(banked.z).toBeGreaterThan(0.9);
 	});
 
-	it("shades asphalt darker when the face turns from the sun", () => {
-		const lit = asphaltForLit(0.7);
-		const shade = asphaltForLit(-0.1);
-		expect(lit).not.toBe(shade);
-		expect(faceLit({ x: 0, y: 0, z: 1 })).toBeGreaterThan(0.4);
+	it("amplifies shade so modest canyon grades still change asphalt", () => {
+		const flat = roadShadeScore(faceLit({ x: 0, y: 0, z: 1 }), 0, 0);
+		const steep = roadShadeScore(faceLit({ x: 0, y: 0, z: 1 }), 0.08, 0);
+		expect(steep).toBeLessThan(flat - 0.2);
+		expect(asphaltForLit(flat)).not.toBe(asphaltForLit(steep));
+		expect(embankDepth("canyon", 0.08, 1.5)).toBeGreaterThan(
+			embankDepth("flats", 0, 0),
+		);
 	});
 
 	it("flags creases on moderate grades and ramp crowns", () => {
 		expect(needsGradeCrease(0.01, 0)).toBe(false);
-		expect(needsGradeCrease(0.04, 0)).toBe(true);
-		expect(needsGradeCrease(0, 0.6)).toBe(true);
+		expect(needsGradeCrease(0.03, 0)).toBe(true);
+		expect(needsGradeCrease(0, 0.5)).toBe(true);
 		expect(gradeTint(0.01)).toBe(0);
 		expect(gradeTint(0.1)).toBe(1);
 		expect(bankHighlight(0.01)).toBe(0);

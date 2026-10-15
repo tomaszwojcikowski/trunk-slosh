@@ -38,11 +38,12 @@ import {
 import {
 	asphaltForLit,
 	bankHighlight,
+	embankDepth,
 	faceLit,
 	gradeTint,
 	needsGradeCrease,
 	ROAD_CURB,
-	ROAD_EMBANK,
+	roadShadeScore,
 	roadSurfaceNormal,
 	shoulderForLit,
 } from "./roadSlope";
@@ -806,7 +807,7 @@ export class Renderer {
 				tangents[i],
 				normals[i],
 			);
-			return shoulderForLit(faceLit(nrm));
+			return shoulderForLit(roadShadeScore(faceLit(nrm), grades[i], banks[i]));
 		});
 		band(0, (i) => {
 			const nrm = roadSurfaceNormal(
@@ -815,7 +816,7 @@ export class Renderer {
 				tangents[i],
 				normals[i],
 			);
-			return asphaltForLit(faceLit(nrm));
+			return asphaltForLit(roadShadeScore(faceLit(nrm), grades[i], banks[i]));
 		});
 
 		// Raised berms / cut banks that follow the ribbon height at each corner.
@@ -911,19 +912,17 @@ export class Renderer {
 		normals: Vec2[],
 	) {
 		const n = track.centerline.length;
-		const wallColors = { lit: "#9a6a3a", shade: "#6a4528", deep: "#4a301c" };
+		const wallColors = {
+			lit: "#8a5a30",
+			shade: "#5a381c",
+			deep: "#2e1c10",
+			lip: "#d2b48c",
+		};
 		for (let i = 0; i < n - 1; i++) {
 			if (!visible(i) && !visible(i + 1)) continue;
 			const absG = Math.abs(grades[i]);
 			const centerZ = Math.abs(zAt(i, track.centerline[i]));
-			const embankExtra = Math.min(
-				ROAD_EMBANK,
-				0.35 + absG * 6 + centerZ * 0.25,
-			);
-			const embank =
-				track.archetype === "flats" && absG < 0.02
-					? ROAD_CURB
-					: ROAD_CURB + embankExtra;
+			const embank = embankDepth(track.archetype, absG, centerZ);
 			const sides: { edge: Vec2[]; sign: number }[] = [
 				{ edge: track.leftEdge, sign: -1 },
 				{ edge: track.rightEdge, sign: 1 },
@@ -941,8 +940,27 @@ export class Renderer {
 				};
 				const sunLit = outward.x * SUN_2D.x + outward.y * SUN_2D.y > 0.05;
 				const base = sunLit ? wallColors.lit : wallColors.shade;
-				const fill =
-					Math.abs(top0 - top1) > 0.35 || absG > 0.04 ? wallColors.deep : base;
+				const dz = Math.abs(top0 - top1);
+				const fill = dz > 0.25 || absG > 0.03 ? wallColors.deep : base;
+				// Ground contact shadow under the embankment.
+				this.fillScreenPoly(
+					[
+						this.P(e0.x, e0.y, bot0 - 0.02),
+						this.P(e1.x, e1.y, bot1 - 0.02),
+						this.P(
+							e1.x + outward.x * 0.55,
+							e1.y + outward.y * 0.55,
+							bot1 - 0.02,
+						),
+						this.P(
+							e0.x + outward.x * 0.55,
+							e0.y + outward.y * 0.55,
+							bot0 - 0.02,
+						),
+					],
+					"rgba(55, 22, 0, 0.35)",
+					0,
+				);
 				this.fillScreenPoly(
 					[
 						this.P(e0.x, e0.y, bot0),
@@ -951,8 +969,18 @@ export class Renderer {
 						this.P(e0.x, e0.y, top0),
 					],
 					fill,
-					Math.max(0.8, 0.05 * this.s),
+					Math.max(1, 0.07 * this.s),
 				);
+				// Light lip along the top edge so the tilt of the curb reads.
+				const ctx = this.ctx;
+				ctx.strokeStyle = wallColors.lip;
+				ctx.lineWidth = Math.max(1.4, 0.11 * this.s);
+				ctx.beginPath();
+				const a = this.P(e0.x, e0.y, top0 + 0.02);
+				const b = this.P(e1.x, e1.y, top1 + 0.02);
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+				ctx.stroke();
 			}
 		}
 	}
@@ -998,7 +1026,7 @@ export class Renderer {
 				0,
 			);
 			// Contour stripe across the ribbon so the climb/descent angle is readable.
-			if (tint > 0.25 && i % 2 === 0) {
+			if (tint > 0.15) {
 				const midL = {
 					x: (l0.x + l1.x) * 0.5,
 					y: (l0.y + l1.y) * 0.5,
@@ -1007,10 +1035,13 @@ export class Renderer {
 					x: (r0.x + r1.x) * 0.5,
 					y: (r0.y + r1.y) * 0.5,
 				};
-				const zm = (zAt(i, l0) + zAt(i + 1, l1)) * 0.5 + 0.03;
+				const zm = (zAt(i, l0) + zAt(i + 1, l1)) * 0.5 + 0.04;
 				const ctx = this.ctx;
-				ctx.strokeStyle = grades[i] > 0 ? "#c4a078" : "#5a4a3a";
-				ctx.lineWidth = Math.max(1.2, 0.12 * this.s);
+				ctx.strokeStyle =
+					grades[i] > 0
+						? `rgba(210, 180, 130, ${0.35 + tint * 0.55})`
+						: `rgba(40, 28, 18, ${0.4 + tint * 0.5})`;
+				ctx.lineWidth = Math.max(1.6, 0.16 * this.s * (0.7 + tint));
 				ctx.beginPath();
 				const a = this.P(midL.x, midL.y, zm);
 				const b = this.P(midR.x, midR.y, zm);
