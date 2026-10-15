@@ -36,7 +36,7 @@ describe("dynamic music mix", () => {
 		expect(parked.bed).toBeGreaterThan(0.6);
 		expect(parked.drive).toBeGreaterThan(0.15);
 		expect(parked.bass).toBeGreaterThan(0.3);
-		expect(parked.bpm).toBeGreaterThanOrEqual(88);
+		expect(parked.bpm).toBeGreaterThanOrEqual(128);
 		const cruise = musicMixFor({ ...base, speed: 18 });
 		expect(cruise.drive).toBeGreaterThan(parked.drive);
 		expect(cruise.bass).toBeGreaterThan(parked.bass);

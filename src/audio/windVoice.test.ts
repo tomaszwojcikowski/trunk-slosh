@@ -17,7 +17,10 @@ describe("wind and impact voices", () => {
 		const rock = impactVoiceFor("rock");
 		const barrel = impactVoiceFor("barrel");
 		expect(rock.freq).not.toBe(barrel.freq);
+		expect(rock.sample).toBe("impactSoft");
+		expect(barrel.sample).toBe("impactMetal");
 		expect(impactVoiceFor(null).freq).toBe(68);
+		expect(impactVoiceFor(null).sample).toBe("impactGeneric");
 		expect(impactVoiceFor("mystery").freq).toBe(68);
 	});
 });
